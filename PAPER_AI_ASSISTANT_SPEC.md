@@ -253,3 +253,45 @@ python src/paper_assistants.py \
 산출물:
 - `outputs/paper_assistant_report_reviewed.json`: `method_data_review` 필드가 추가된 리뷰 결과
 - `outputs/paper_assistant_review.md`: Method / Data DB / Dataset / Relevance 표 형식 리포트
+
+---
+
+## 13) 지금까지의 작업 업데이트 (2026-04-11)
+
+현재 저장소 기준으로 완료된 작업을 운영 관점에서 요약하면 아래와 같다.
+
+### 완료된 산출물
+
+- **기획/운영 문서화**
+  - `PAPER_AI_ASSISTANT_SPEC.md`: 전체 제품 기획, 3-Assistant 파이프라인, multi-omics 확장 전략 정리
+  - `OPENCLAW_SETUP.md`: OpenClaw + Codex CLI + systemd까지 원클릭/단계별 설치 가이드
+  - `MULTIOMICS_OPERATIONS.md`: 단건 적재/백필/주기 실행 운영 절차
+
+- **스키마/모델 기반 데이터 구조화**
+  - `schemas/paper_record.schema.json`, `schemas/idea_record.schema.json`으로 레코드 구조 고정
+  - `src/multiomics_models.py`에 Pydantic 모델 및 번들 입출력 파서 구현
+  - `examples/multiomics_records.example.json` 샘플 입력 제공
+
+- **적재 파이프라인 자동화**
+  - `src/multiomics_ingest.py` 기반 append-only 적재 로직 구성
+  - `ops/07_ingest_multiomics_once.sh`(1회 적재), `ops/08_backfill_multiomics.sh`(백필) 제공
+  - `ops/multiomics_ingest.service`, `ops/multiomics_ingest.timer`, `ops/09_setup_multiomics_timer.sh`로 주기 실행 구성
+
+- **논문 수집/요약/검토 파이프라인 구현**
+  - `src/paper_assistants.py`에 Retrieval/Summarizer/RelevanceReviewer 3-Assistant 흐름 구현
+  - T2D + Alzheimer's 질의 및 Korea affiliation 체크(`korea_affiliation_present`) 포함
+  - 기존 리포트 재검토 모드(`--from-report`)와 Markdown 리뷰 출력(`--review-md-output`) 지원
+
+### 현재 운영 가능한 흐름
+
+1. OpenClaw 환경 부트스트랩 (`ops/00_bootstrap_openclaw.sh`)
+2. 논문 수집/요약 실행 (`src/paper_assistants.py`)
+3. 결과를 multi-omics JSONL로 적재 (`src/multiomics_ingest.py` + ops 스크립트)
+4. 필요 시 systemd timer로 배치 자동화 (`ops/09_setup_multiomics_timer.sh`)
+
+### 다음 우선순위 제안
+
+- **중복 제어 강화**: `paper_id`/`idea_id` 기준 dedup 단계 추가
+- **품질 메트릭 도입**: 요약 품질/주제 적합성 점수의 추세 모니터링
+- **아이디어 랭킹 고도화**: novelty/feasibility/impact 가중치 튜닝
+- **리포트 표준화**: 주간 운영 리포트 템플릿(성공/실패 케이스 포함) 정착
