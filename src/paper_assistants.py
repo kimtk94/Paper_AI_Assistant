@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -100,6 +101,26 @@ class DownloadResult:
     filename: str | None
     source_url: str | None
     reason: str
+
+
+@dataclass
+class MissingPdfCandidate:
+    paper_id: str
+    title: str
+    doi: str | None
+    pmid: str | None
+    identifier: str
+    miss_reason: str
+
+
+@dataclass
+class ScihubDownloadAttempt:
+    command: list[str]
+    returncode: int
+    input_file: str
+    candidate_count: int
+    stdout_tail: str
+    stderr_tail: str
 
 
 class RetrievalAssistant:
@@ -829,6 +850,96 @@ def _download_pdfs_for_papers(
     return payload
 
 
+def _collect_missing_pdf_candidates(
+    papers: list[PaperResult],
+    *,
+    pdf_payload: dict[str, Any],
+) -> list[MissingPdfCandidate]:
+    doi_map = {p.doi: p for p in papers if p.doi}
+    pmid_map = {p.pmid: p for p in papers if p.pmid}
+    candidates: list[MissingPdfCandidate] = []
+
+    for row in pdf_payload.get("results", []):
+        if row.get("downloaded"):
+            continue
+        doi = text_or_none(row.get("doi"))
+        pmid = text_or_none(row.get("pmid"))
+        miss_reason = str(row.get("reason") or "")
+
+        paper = None
+        if doi and doi in doi_map:
+            paper = doi_map[doi]
+        elif pmid and pmid in pmid_map:
+            paper = pmid_map[pmid]
+        if paper is None:
+            continue
+
+        identifier = doi or pmid or str(row.get("normalized_id") or "")
+        if not identifier:
+            continue
+        candidates.append(
+            MissingPdfCandidate(
+                paper_id=paper.paper_id,
+                title=paper.title,
+                doi=paper.doi,
+                pmid=paper.pmid,
+                identifier=identifier,
+                miss_reason=miss_reason,
+            )
+        )
+
+    return candidates
+
+
+def _run_scihub_cli(
+    candidates: list[MissingPdfCandidate],
+    *,
+    scihub_bin: str,
+    outdir: Path,
+    input_file: Path,
+    email: str | None,
+    extra_args: list[str],
+) -> dict[str, Any]:
+    seen: set[str] = set()
+    ids: list[str] = []
+    for candidate in candidates:
+        key = candidate.identifier.strip()
+        if key and key not in seen:
+            seen.add(key)
+            ids.append(key)
+
+    input_file.parent.mkdir(parents=True, exist_ok=True)
+    input_file.write_text("\n".join(ids) + "\n", encoding="utf-8")
+
+    command = [scihub_bin, str(input_file), "-o", str(outdir)]
+    if email:
+        command.extend(["--email", email])
+    command.extend(extra_args)
+
+    proc = subprocess.run(command, capture_output=True, text=True)
+    stdout_tail = proc.stdout[-1000:]
+    stderr_tail = proc.stderr[-1000:]
+    status = "OK" if proc.returncode == 0 else "FAIL"
+    print(f"[scihub:{status}] input={input_file} ids={len(ids)} outdir={outdir}")
+
+    attempt = ScihubDownloadAttempt(
+        command=command,
+        returncode=proc.returncode,
+        input_file=str(input_file),
+        candidate_count=len(ids),
+        stdout_tail=stdout_tail,
+        stderr_tail=stderr_tail,
+    )
+
+    return {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "total_runs": 1,
+        "success_runs": 1 if proc.returncode == 0 else 0,
+        "failed_runs": 0 if proc.returncode == 0 else 1,
+        "results": [asdict(attempt)],
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Disease paper retrieval + summary + relevance review assistants")
     parser.add_argument("--max-results", type=int, default=12, help="Maximum number of papers to store")
@@ -900,6 +1011,45 @@ def parse_args() -> argparse.Namespace:
         default=30,
         help="HTTP timeout seconds for PDF download requests.",
     )
+    parser.add_argument(
+        "--missing-pdf-report",
+        type=Path,
+        default=Path("outputs/pdf_missing_candidates.json"),
+        help="JSON report path for papers that still miss PDF after legal OA download attempts.",
+    )
+    parser.add_argument(
+        "--retry-missing-with-scihub-cli",
+        action="store_true",
+        help="Retry missing-PDF candidates via scihub-cli batch mode.",
+    )
+    parser.add_argument(
+        "--scihub-cli-bin",
+        default="scihub-cli",
+        help="scihub-cli executable name or full path.",
+    )
+    parser.add_argument(
+        "--scihub-input-file",
+        type=Path,
+        default=Path("outputs/scihub_missing_input.txt"),
+        help="Input text file path generated for scihub-cli (one identifier per line).",
+    )
+    parser.add_argument(
+        "--scihub-email",
+        default=None,
+        help="Optional email passed to scihub-cli --email (for Unpaywall integration).",
+    )
+    parser.add_argument(
+        "--scihub-extra-args",
+        nargs="*",
+        default=[],
+        help="Additional arguments passed through to scihub-cli (e.g. --verbose --no-fast-fail).",
+    )
+    parser.add_argument(
+        "--scihub-report",
+        type=Path,
+        default=Path("outputs/scihub_download_report.json"),
+        help="JSON report path for scihub command execution results.",
+    )
     return parser.parse_args()
 
 
@@ -931,13 +1081,48 @@ def main() -> None:
     if args.review_md_output:
         _write_review_markdown(report, args.review_md_output)
     if args.download_pdfs:
-        _download_pdfs_for_papers(
+        pdf_payload = _download_pdfs_for_papers(
             papers,
             outdir=args.pdf_outdir,
             report_path=args.pdf_report,
             timeout=args.pdf_timeout,
             unpaywall_email=args.unpaywall_email,
         )
+        missing_candidates = _collect_missing_pdf_candidates(papers, pdf_payload=pdf_payload)
+        args.missing_pdf_report.parent.mkdir(parents=True, exist_ok=True)
+        args.missing_pdf_report.write_text(
+            json.dumps(
+                {
+                    "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+                    "total": len(missing_candidates),
+                    "results": [asdict(c) for c in missing_candidates],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        print(json.dumps({"missing_pdf_report_saved": str(args.missing_pdf_report), "total": len(missing_candidates)}))
+
+        if args.retry_missing_with_scihub_cli and missing_candidates:
+            scihub_payload = _run_scihub_cli(
+                missing_candidates,
+                scihub_bin=args.scihub_cli_bin,
+                outdir=args.pdf_outdir,
+                input_file=args.scihub_input_file,
+                email=args.scihub_email,
+                extra_args=args.scihub_extra_args,
+            )
+            args.scihub_report.parent.mkdir(parents=True, exist_ok=True)
+            args.scihub_report.write_text(
+                json.dumps(scihub_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            print(
+                json.dumps(
+                    {"scihub_report_saved": str(args.scihub_report), "success_runs": scihub_payload["success_runs"]}
+                )
+            )
     print(json.dumps({"saved": str(args.output), "count": report["count"]}, ensure_ascii=False))
 
 
