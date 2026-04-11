@@ -295,3 +295,45 @@ python src/paper_assistants.py \
 - **품질 메트릭 도입**: 요약 품질/주제 적합성 점수의 추세 모니터링
 - **아이디어 랭킹 고도화**: novelty/feasibility/impact 가중치 튜닝
 - **리포트 표준화**: 주간 운영 리포트 템플릿(성공/실패 케이스 포함) 정착
+
+## 12) PDF 본문 텍스트 추출 + 연차/질병 분류 스크립트
+
+다운로드한 PDF를 실제로 "연차별 + 질병별"로 정리할 수 있도록 `src/pdf_disease_year_organizer.py`를 추가했다.
+
+### 제공 기능
+- PDF 텍스트 추출: `pypdf` 우선, 없으면 `pdfplumber` → `pymupdf(fitz)` → `pdftotext` 순 fallback
+- 질병 분류: 텍스트 내 키워드 기반 multi-label 매칭
+- 연도 추정: 파일명 우선 + 본문 텍스트 내 연도 후보 보정
+- 산출물 생성:
+  - 정리된 PDF 폴더: `<output>/<disease>/<year>/...pdf`
+  - 추출 텍스트 파일: `<text_dir>/*.txt`
+  - JSON 리포트: 파일별 추출/분류 상세
+  - Markdown 요약: 질병별/연도별 분포와 실패 목록
+
+### 실행 예시
+
+```bash
+python src/pdf_disease_year_organizer.py \
+  --pdf-dir data/pdfs \
+  --output-dir data/organized_pdfs \
+  --text-dir data/extracted_text \
+  --report-json data/pdf_organize_report.json \
+  --summary-md data/pdf_organize_summary.md
+```
+
+### 질병 키워드 커스터마이징
+
+기본 키워드 대신 JSON 파일로 커스텀 매핑을 넣을 수 있다.
+
+```json
+{
+  "type_2_diabetes": ["type 2 diabetes", "t2d", "insulin resistance"],
+  "alzheimers_disease": ["alzheimer", "amyloid", "dementia"]
+}
+```
+
+```bash
+python src/pdf_disease_year_organizer.py \
+  --pdf-dir data/pdfs \
+  --disease-keywords-json config/disease_keywords.json
+```
