@@ -10,7 +10,12 @@ git pull --ff-only
 echo "[2/3] Ensure OpenClaw is installed"
 if ! command -v openclaw >/dev/null 2>&1; then
   echo "openclaw not found. installing..."
-  curl -fsSL https://openclaw.ai/install.sh | sh
+  if command -v bash >/dev/null 2>&1; then
+    curl -fsSL https://openclaw.ai/install.sh | bash
+  else
+    echo "bash is required by OpenClaw install script."
+    exit 1
+  fi
 fi
 
 echo "[3/3] Restart service"

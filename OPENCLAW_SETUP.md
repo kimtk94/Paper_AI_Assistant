@@ -47,3 +47,7 @@ sh ops/login_codex_oauth.sh
 ```
 
 단, 플랜/시점에 따라 사용량·모델 제한이 달라질 수 있습니다.
+
+### 설치 에러가 `set: Illegal option -o pipefail` 로 나는 경우
+OpenClaw 설치 스크립트는 내부적으로 bash를 요구할 수 있습니다.
+최신 스크립트(`sh ops/install_openclaw.sh`)는 자동으로 `bash` 파이프 실행을 사용합니다.

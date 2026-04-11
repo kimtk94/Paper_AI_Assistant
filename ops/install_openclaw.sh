@@ -6,6 +6,11 @@ if command -v openclaw >/dev/null 2>&1; then
   exit 0
 fi
 
-curl -fsSL https://openclaw.ai/install.sh | sh
+if command -v bash >/dev/null 2>&1; then
+  curl -fsSL https://openclaw.ai/install.sh | bash
+else
+  echo "bash is required by OpenClaw install script."
+  exit 1
+fi
 
 echo "installed openclaw: $(openclaw --version 2>/dev/null || true)"
