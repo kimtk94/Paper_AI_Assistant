@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "paper_record.schema.json",
+  "title": "Multi-omics Paper Record",
+  "type": "object",
+  "required": [
+    "paper_id",
+    "title",
+    "year",
+    "disease_domain",
+    "disease_name",
+    "modalities",
+    "study_type",
+    "main_question",
+    "key_findings",
+    "limitations",
+    "open_problems",
+    "data_resources",
+    "reproducibility",
+    "evidence_strength"
+  ],
+  "properties": {
+    "paper_id": { "type": "string", "description": "DOI/PMID/arXiv ID" },
+    "title": { "type": "string" },
+    "authors": { "type": "array", "items": { "type": "string" } },
+    "journal_or_venue": { "type": "string" },
+    "year": { "type": "integer", "minimum": 1990, "maximum": 2100 },
+    "disease_domain": {
+      "type": "string",
+      "enum": ["metabolic", "brain"]
+    },
+    "disease_name": {
+      "type": "string",
+      "enum": [
+        "type_2_diabetes",
+        "obesity",
+        "nafld",
+        "metabolic_syndrome",
+        "alzheimers_disease",
+        "parkinsons_disease",
+        "schizophrenia",
+        "major_depressive_disorder"
+      ]
+    },
+    "population": {
+      "type": "object",
+      "properties": {
+        "ancestry": { "type": "array", "items": { "type": "string" } },
+        "sample_size": { "type": "integer", "minimum": 0 },
+        "sex_info": { "type": "string" },
+        "age_range": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "modalities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["GWAS", "TWAS", "PWAS", "scRNA_seq", "eQTL", "pQTL", "ATAC_seq"]
+      },
+      "minItems": 1
+    },
+    "study_type": {
+      "type": "string",
+      "enum": ["method", "association", "integrative", "benchmark", "review"]
+    },
+    "main_question": { "type": "string" },
+    "methods": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "e.g., fine-mapping, colocalization, MR, cell-type enrichment"
+    },
+    "key_findings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "open_problems": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "data_resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "access"],
+        "properties": {
+          "name": { "type": "string" },
+          "type": { "type": "string", "enum": ["summary_stats", "single_cell", "qtl", "proteomics", "other"] },
+          "access": { "type": "string", "enum": ["open", "controlled", "unknown"] },
+          "url": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "reproducibility": {
+      "type": "object",
+      "required": ["code_available", "data_available"],
+      "properties": {
+        "code_available": { "type": "boolean" },
+        "code_url": { "type": "string" },
+        "data_available": { "type": "boolean" },
+        "workflow_clarity_score": { "type": "number", "minimum": 0, "maximum": 10 }
+      },
+      "additionalProperties": false
+    },
+    "evidence_strength": {
+      "type": "object",
+      "required": ["overall_score"],
+      "properties": {
+        "overall_score": { "type": "number", "minimum": 0, "maximum": 10 },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}
