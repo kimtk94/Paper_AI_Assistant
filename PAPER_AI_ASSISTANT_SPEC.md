@@ -1,5 +1,13 @@
 # Paper AI Assistant 기획서 (논문 검색 + 후속 주제 발굴)
 
+## 0) 비용 전략 (중요)
+
+초기에는 **추가 요금 없이** 검증하는 것을 목표로 한다.
+
+- 1순위: `codex --login` 기반 ChatGPT OAuth 인증으로 시작
+- API 키를 직접 코드/문서에 넣지 않고 인증 연동으로 운영
+- 무료/기본 제공 한도 내에서 MVP 실험 후, 필요 시 유료 확장
+
 ## 1) 목표
 
 사용자가 키워드/질문을 입력하면:
@@ -63,9 +71,9 @@
    - 사용자 질문을 검색 쿼리로 변환
 2. **Paper Retriever**
    - 논문 메타데이터/초록 수집
-3. **Paper Analyzer (LLM: OpenAI)**
+3. **Paper Analyzer (LLM: OpenAI / Codex OAuth 연동 우선)**
    - 핵심 기여/한계/공백 추출
-4. **Topic Generator (LLM: OpenAI)**
+4. **Topic Generator (LLM: OpenAI / Codex OAuth 연동 우선)**
    - 후속 주제 후보 생성
 5. **Ranker**
    - 새로움/실험 가능성/영향도 기반 랭킹
