@@ -166,3 +166,22 @@
 2. OpenAI 프롬프트 템플릿 정의 (요약용/주제생성용)
 3. MVP CLI 명령 설계 (`search`, `summarize`, `propose-topics`)
 4. 샘플 질의 10개로 품질 평가 루프 구축
+
+---
+
+## 10) Multi-omics 구조화 스키마/파서 산출물
+
+아래 파일을 추가해 multi-omics 논문/아이디어 구조화 데이터를 바로 검증할 수 있게 구성했다.
+
+- `schemas/paper_record.schema.json`: Paper Record JSON Schema
+- `schemas/idea_record.schema.json`: Idea Record JSON Schema
+- `examples/multiomics_records.example.json`: 샘플 입력 템플릿
+- `src/multiomics_models.py`: Pydantic 모델 + OpenClaw 입출력 파서(`parse_bundle`, `load_bundle`, `dump_bundle`)
+
+빠른 확인:
+
+```bash
+python src/multiomics_models.py
+```
+
+`pydantic`이 설치되어 있으면 샘플 JSON 검증 후 레코드 개수를 출력한다.
