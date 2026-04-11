@@ -1,0 +1,10 @@
+[Unit]
+Description=Run multiomics ingest every 6 hours
+
+[Timer]
+OnCalendar=*:0/6
+Persistent=true
+Unit=multiomics_ingest.service
+
+[Install]
+WantedBy=timers.target

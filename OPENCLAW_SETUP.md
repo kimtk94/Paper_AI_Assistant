@@ -57,3 +57,22 @@ sh ops/03_login_codex_oauth.sh
 ### 설치 에러가 `set: Illegal option -o pipefail` 로 나는 경우
 OpenClaw 설치 스크립트는 내부적으로 bash를 요구할 수 있습니다.
 최신 스크립트(`sh ops/01_install_openclaw.sh`)는 자동으로 `bash` 파이프 실행을 사용합니다.
+
+## 3) Multi-omics 적재 운영
+
+### 1회 적재
+```bash
+sh ops/07_ingest_multiomics_once.sh data/incoming/latest_bundle.json
+```
+
+### 백필(여러 JSON)
+```bash
+sh ops/08_backfill_multiomics.sh examples/backfill_inputs data/multiomics
+```
+
+### 주기 실행(systemd timer)
+```bash
+sh ops/09_setup_multiomics_timer.sh
+```
+
+상세 운영 설명은 `MULTIOMICS_OPERATIONS.md`를 참고하세요.

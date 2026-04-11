@@ -1,0 +1,148 @@
+{
+  "papers": [
+    {
+      "paper_id": "PMID:XXXXXXX",
+      "title": "Integrative GWAS and single-cell analysis in type 2 diabetes",
+      "authors": ["A", "B"],
+      "journal_or_venue": "Nature Genetics",
+      "year": 2024,
+      "disease_domain": "metabolic",
+      "disease_name": "type_2_diabetes",
+      "population": {
+        "ancestry": ["EUR", "EAS"],
+        "sample_size": 450000,
+        "sex_info": "mixed",
+        "age_range": "40-80"
+      },
+      "modalities": ["GWAS", "scRNA_seq", "eQTL"],
+      "study_type": "integrative",
+      "main_question": "Which cell types mediate T2D genetic risk?",
+      "methods": ["fine-mapping", "colocalization", "cell-type enrichment"],
+      "key_findings": ["Beta-cell and ductal signatures were enriched."],
+      "limitations": ["Limited non-European ancestry representation."],
+      "open_problems": ["Need proteome-level validation."],
+      "data_resources": [
+        {
+          "name": "DIAGRAM summary stats",
+          "type": "summary_stats",
+          "access": "open",
+          "url": "https://example.org"
+        }
+      ],
+      "reproducibility": {
+        "code_available": true,
+        "code_url": "https://github.com/example/repo",
+        "data_available": true,
+        "workflow_clarity_score": 8.5
+      },
+      "evidence_strength": {
+        "overall_score": 8.0,
+        "notes": "Large cohort, consistent across methods."
+      },
+      "tags": ["fine_mapping", "islet", "ancestry_bias"]
+    },
+    {
+      "paper_id": "PMID:YYYYYYY",
+      "title": "Cross-omics prioritization of Alzheimer's disease genes",
+      "authors": ["C", "D"],
+      "journal_or_venue": "Cell",
+      "year": 2025,
+      "disease_domain": "brain",
+      "disease_name": "alzheimers_disease",
+      "population": {
+        "ancestry": ["EUR"],
+        "sample_size": 120000,
+        "sex_info": "mixed",
+        "age_range": "60-95"
+      },
+      "modalities": ["GWAS", "TWAS", "scRNA_seq", "pQTL"],
+      "study_type": "integrative",
+      "main_question": "Can AD loci be linked to cell-type-specific expression and proteins?",
+      "methods": ["TWAS", "MR", "cell-state mapping"],
+      "key_findings": ["Microglial states linked to multiple AD risk loci."],
+      "limitations": ["Limited longitudinal validation."],
+      "open_problems": ["Need causal perturbation evidence."],
+      "data_resources": [
+        {
+          "name": "AD GWAS meta-analysis",
+          "type": "summary_stats",
+          "access": "open",
+          "url": "https://example.org/ad"
+        }
+      ],
+      "reproducibility": {
+        "code_available": false,
+        "data_available": true,
+        "workflow_clarity_score": 6.5
+      },
+      "evidence_strength": {
+        "overall_score": 7.4,
+        "notes": "Strong association evidence, moderate causal certainty."
+      },
+      "tags": ["microglia", "twas", "causality_gap"]
+    }
+  ],
+  "ideas": [
+    {
+      "idea_id": "IDEA-MET-001",
+      "title": "T2D risk loci to protein-mediated beta-cell stress axis",
+      "disease_domain": "metabolic",
+      "disease_name": "type_2_diabetes",
+      "hypothesis": "A subset of T2D GWAS loci act through islet-specific expression and circulating proteins linked to beta-cell stress.",
+      "target_modalities": ["GWAS", "TWAS", "PWAS", "scRNA_seq", "pQTL"],
+      "rationale": {
+        "gap_statement": "Existing studies stop at expression-level prioritization without protein mediation testing.",
+        "biological_plausibility": "Beta-cell stress pathways are mechanistically linked to insulin secretion failure.",
+        "novelty_statement": "Joint TWAS+PWAS with cell-state-resolved validation in islet scRNA-seq."
+      },
+      "supporting_papers": ["PMID:XXXXXXX"],
+      "required_datasets": [
+        { "name": "T2D GWAS summary", "modality": "GWAS", "access": "open", "url": "https://example.org" },
+        { "name": "Islet scRNA atlas", "modality": "scRNA_seq", "access": "open", "url": "https://example.org" }
+      ],
+      "analysis_plan": [
+        { "step": 1, "description": "Fine-map T2D loci and define credible sets.", "tool_hint": "susie/finemap" },
+        { "step": 2, "description": "Perform TWAS and colocalization with islet eQTL.", "tool_hint": "FUSION/COLOC" },
+        { "step": 3, "description": "Overlay pQTL/PWAS and test mediation signals.", "tool_hint": "SMR/MR" },
+        { "step": 4, "description": "Map prioritized genes/proteins to beta-cell states in scRNA-seq.", "tool_hint": "Seurat/Scanpy" }
+      ],
+      "evaluation_metrics": ["colocalization PP4", "MR p-value", "replication consistency"],
+      "risk_and_fallback": {
+        "main_risks": ["Weak pQTL power", "Ancestry mismatch across datasets"],
+        "fallback_plan": ["Use cis-pQTL robust subset", "Stratified analysis by ancestry-overlap cohorts"]
+      },
+      "scores": { "novelty": 8.2, "feasibility": 7.1, "impact": 8.8, "overall": 8.0 },
+      "priority_rank": 1
+    },
+    {
+      "idea_id": "IDEA-BRAIN-001",
+      "title": "AD microglial state-specific causal chain from locus to transcript to protein",
+      "disease_domain": "brain",
+      "disease_name": "alzheimers_disease",
+      "hypothesis": "AD risk loci converge on microglial activation states through transcript-protein cascades.",
+      "target_modalities": ["GWAS", "TWAS", "PWAS", "scRNA_seq", "pQTL"],
+      "rationale": {
+        "gap_statement": "Few studies jointly test transcript and protein mediation in specific microglial states.",
+        "biological_plausibility": "Microglial activation is central to AD neuroinflammation and plaque response.",
+        "novelty_statement": "State-specific multi-omics causal prioritization framework."
+      },
+      "supporting_papers": ["PMID:YYYYYYY"],
+      "required_datasets": [
+        { "name": "AD GWAS meta", "modality": "GWAS", "access": "open", "url": "https://example.org/ad" },
+        { "name": "Brain single-nucleus RNA atlas", "modality": "scRNA_seq", "access": "controlled", "url": "https://example.org/snrna" }
+      ],
+      "analysis_plan": [
+        { "step": 1, "description": "Run locus-level colocalization for eQTL and pQTL in brain tissues.", "tool_hint": "COLOC/eCAVIAR" },
+        { "step": 2, "description": "Perform TWAS/PWAS and integrate results via Bayesian prioritization.", "tool_hint": "FOCUS/custom" },
+        { "step": 3, "description": "Project prioritized genes/proteins to microglial cell states.", "tool_hint": "Scanpy/cell-state scoring" }
+      ],
+      "evaluation_metrics": ["posterior causal probability", "cell-state specificity index", "independent cohort replication"],
+      "risk_and_fallback": {
+        "main_risks": ["Limited brain pQTL sample size", "heterogeneous cell-state annotation"],
+        "fallback_plan": ["Use multi-tissue pQTL proxy", "harmonized reference atlas for annotation"]
+      },
+      "scores": { "novelty": 8.6, "feasibility": 6.8, "impact": 9.0, "overall": 8.1 },
+      "priority_rank": 1
+    }
+  ]
+}
