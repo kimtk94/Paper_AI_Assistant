@@ -1,0 +1,11 @@
+[Unit]
+Description=Multiomics bundle ingest (single run)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/workspace/Paper_AI_Assistant
+ExecStart=/usr/bin/env sh -lc 'python3 src/multiomics_ingest.py --input data/incoming/latest_bundle.json --data-dir data/multiomics --strict-validation'
+
+[Install]
+WantedBy=multi-user.target
