@@ -8,6 +8,9 @@ Assistants:
 
 The retrieval result includes a boolean flag indicating whether any author
 has an affiliation that appears to be in Korea.
+
+Quick start:
+    python src/paper_assistants.py --max-results 20 --mailto kimtk7830@naver.com
 """
 
 from __future__ import annotations
@@ -23,17 +26,17 @@ from urllib.error import URLError, HTTPError
 from typing import Any
 
 OPENALEX_WORKS_URL = "https://api.openalex.org/works"
-DEFAULT_MAILTO = "paper-assistant@example.com"
+DEFAULT_MAILTO = "kimtk7830@naver.com"
 TARGET_DISEASES = {
     "type_2_diabetes": [
-        '"type 2 diabetes"',
-        '"T2D"',
-        '"insulin resistance"',
+        "type 2 diabetes",
+        "T2D",
+        "insulin resistance",
     ],
     "alzheimers_disease": [
-        '"Alzheimer disease"',
-        '"Alzheimer\'s disease"',
-        '"AD dementia"',
+        "Alzheimer disease",
+        "Alzheimer's disease",
+        "AD dementia",
     ],
 }
 
@@ -44,6 +47,7 @@ class PaperResult:
     title: str
     year: int | None
     doi: str | None
+    pmid: str | None
     openalex_id: str
     source: str
     authors: list[str]
@@ -79,33 +83,47 @@ class RetrievalAssistant:
         per_page: int = 25,
         timeout: int = 30,
         max_pages_per_term: int = 3,
+        show_progress: bool = True,
     ) -> None:
         self.mailto = mailto
         self.per_page = per_page
         self.timeout = timeout
         self.max_pages_per_term = max_pages_per_term
+        self.show_progress = show_progress
 
-    def fetch(self, *, max_results: int = 20) -> list[PaperResult]:
+    def fetch(self, *, max_results: int = 20, skip_index: "ProcessedIndex | None" = None) -> list[PaperResult]:
         collected: list[PaperResult] = []
         seen_ids: set[str] = set()
 
         for disease_name, query_terms in TARGET_DISEASES.items():
+            self._progress(f"[retrieve] disease={disease_name} terms={len(query_terms)}")
             for term in query_terms:
                 if len(collected) >= max_results:
                     break
+                self._progress(f"[retrieve] term={term} start")
                 for page in range(1, self.max_pages_per_term + 1):
+                    self._progress(f"[retrieve] term={term} page={page}")
                     works = self._query_openalex(term, page=page)
                     if not works:
+                        self._progress(f"[retrieve] term={term} page={page} no_results")
                         break
                     for work in works:
                         parsed = self._parse_work(work)
                         if parsed.paper_id in seen_ids:
+                            continue
+                        if skip_index and skip_index.contains(parsed):
+                            self._progress(
+                                f"[skip] already_processed openalex={parsed.openalex_id} doi={parsed.doi} pmid={parsed.pmid}"
+                            )
                             continue
                         parsed.disease_hits = self._disease_hits(parsed)
                         if not parsed.disease_hits:
                             continue
                         seen_ids.add(parsed.paper_id)
                         collected.append(parsed)
+                        self._progress(
+                            f"[collect] count={len(collected)}/{max_results} id={parsed.paper_id} diseases={parsed.disease_hits}"
+                        )
                         if len(collected) >= max_results:
                             break
                     if len(collected) >= max_results:
@@ -137,6 +155,7 @@ class RetrievalAssistant:
         title = str(work.get("title") or "(untitled)")
         year = work.get("publication_year")
         doi = work.get("doi")
+        pmid = self._extract_pmid(work)
         source = "openalex"
         authors = []
         korea_evidence: list[str] = []
@@ -170,6 +189,7 @@ class RetrievalAssistant:
             title=title,
             year=year,
             doi=doi,
+            pmid=pmid,
             openalex_id=paper_id,
             source=source,
             authors=authors,
@@ -180,6 +200,17 @@ class RetrievalAssistant:
             korea_affiliation_evidence=sorted(set(korea_evidence)),
             disease_hits=[],
         )
+
+    @staticmethod
+    def _extract_pmid(work: dict[str, Any]) -> str | None:
+        ids = work.get("ids") or {}
+        pmid = ids.get("pmid")
+        if not pmid:
+            return None
+        pmid_text = str(pmid).strip().rstrip("/")
+        if "/" in pmid_text:
+            pmid_text = pmid_text.split("/")[-1]
+        return pmid_text or None
 
     @staticmethod
     def _reconstruct_abstract(inverted_index: dict[str, list[int]] | None) -> str | None:
@@ -217,6 +248,85 @@ class RetrievalAssistant:
         if any(term in haystack for term in ad_terms):
             hits.append("alzheimers_disease")
         return hits
+
+    def _progress(self, message: str) -> None:
+        if self.show_progress:
+            print(message)
+
+
+@dataclass
+class ProcessedIndex:
+    openalex_ids: set[str]
+    dois: set[str]
+    pmids: set[str]
+
+    @classmethod
+    def empty(cls) -> "ProcessedIndex":
+        return cls(openalex_ids=set(), dois=set(), pmids=set())
+
+    def contains(self, paper: PaperResult) -> bool:
+        if paper.openalex_id and paper.openalex_id in self.openalex_ids:
+            return True
+        if paper.doi and paper.doi in self.dois:
+            return True
+        if paper.pmid and paper.pmid in self.pmids:
+            return True
+        return False
+
+    def add(self, paper: PaperResult) -> None:
+        if paper.openalex_id:
+            self.openalex_ids.add(paper.openalex_id)
+        if paper.doi:
+            self.dois.add(paper.doi)
+        if paper.pmid:
+            self.pmids.add(paper.pmid)
+
+    def extend(self, papers: list[PaperResult]) -> None:
+        for paper in papers:
+            self.add(paper)
+
+    def to_json(self) -> dict[str, list[str]]:
+        return {
+            "openalex_ids": sorted(self.openalex_ids),
+            "dois": sorted(self.dois),
+            "pmids": sorted(self.pmids),
+        }
+
+    @classmethod
+    def from_json(cls, payload: dict[str, Any]) -> "ProcessedIndex":
+        return cls(
+            openalex_ids=set(str(v) for v in payload.get("openalex_ids", [])),
+            dois=set(str(v) for v in payload.get("dois", [])),
+            pmids=set(str(v) for v in payload.get("pmids", [])),
+        )
+
+
+def _load_processed_index(index_path: Path, *, show_progress: bool) -> ProcessedIndex:
+    if not index_path.exists():
+        if show_progress:
+            print(f"[state] no existing index file: {index_path}")
+        return ProcessedIndex.empty()
+    try:
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+        index = ProcessedIndex.from_json(payload)
+        if show_progress:
+            print(
+                f"[state] loaded index: openalex={len(index.openalex_ids)} doi={len(index.dois)} pmid={len(index.pmids)} from {index_path}"
+            )
+        return index
+    except json.JSONDecodeError:
+        if show_progress:
+            print(f"[state] invalid JSON index, starting fresh: {index_path}")
+        return ProcessedIndex.empty()
+
+
+def _save_processed_index(index_path: Path, index: ProcessedIndex, *, show_progress: bool) -> None:
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text(json.dumps(index.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
+    if show_progress:
+        print(
+            f"[state] saved index: openalex={len(index.openalex_ids)} doi={len(index.dois)} pmid={len(index.pmids)} to {index_path}"
+        )
 
 
 class SummarizerAssistant:
@@ -299,20 +409,25 @@ def run_pipeline(
     *,
     max_results: int,
     output_path: Path,
+    index_path: Path,
     mailto: str,
     max_pages_per_term: int,
+    show_progress: bool,
 ) -> dict[str, Any]:
-    retriever = RetrievalAssistant(mailto=mailto, max_pages_per_term=max_pages_per_term)
+    retriever = RetrievalAssistant(mailto=mailto, max_pages_per_term=max_pages_per_term, show_progress=show_progress)
     summarizer = SummarizerAssistant()
     reviewer = RelevanceReviewerAssistant()
 
-    papers = retriever.fetch(max_results=max_results)
+    processed_index = _load_processed_index(index_path, show_progress=show_progress)
+    papers = retriever.fetch(max_results=max_results, skip_index=processed_index)
     summaries = summarizer.summarize(papers)
     reviews = reviewer.review(papers)
     report = build_report(papers, summaries, reviews)
+    processed_index.extend(papers)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    _save_processed_index(index_path, processed_index, show_progress=show_progress)
     return report
 
 
@@ -336,6 +451,17 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_MAILTO,
         help="Contact email sent to OpenAlex API as polite pool identifier",
     )
+    parser.add_argument(
+        "--index-path",
+        type=Path,
+        default=Path("outputs/paper_assistant_seen_ids.json"),
+        help="Path to persistent processed-id index used for skip behavior",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Disable pipeline progress logs",
+    )
     return parser.parse_args()
 
 
@@ -344,8 +470,10 @@ def main() -> None:
     report = run_pipeline(
         max_results=args.max_results,
         output_path=args.output,
+        index_path=args.index_path,
         mailto=args.mailto,
         max_pages_per_term=args.max_pages_per_term,
+        show_progress=not args.quiet,
     )
     print(json.dumps({"saved": str(args.output), "count": report["count"]}, ensure_ascii=False))
 
