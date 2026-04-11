@@ -72,10 +72,18 @@ class RelevanceReview:
 
 
 class RetrievalAssistant:
-    def __init__(self, *, mailto: str = DEFAULT_MAILTO, per_page: int = 25, timeout: int = 30) -> None:
+    def __init__(
+        self,
+        *,
+        mailto: str = DEFAULT_MAILTO,
+        per_page: int = 25,
+        timeout: int = 30,
+        max_pages_per_term: int = 3,
+    ) -> None:
         self.mailto = mailto
         self.per_page = per_page
         self.timeout = timeout
+        self.max_pages_per_term = max_pages_per_term
 
     def fetch(self, *, max_results: int = 20) -> list[PaperResult]:
         collected: list[PaperResult] = []
@@ -85,16 +93,21 @@ class RetrievalAssistant:
             for term in query_terms:
                 if len(collected) >= max_results:
                     break
-                works = self._query_openalex(term)
-                for work in works:
-                    parsed = self._parse_work(work)
-                    if parsed.paper_id in seen_ids:
-                        continue
-                    parsed.disease_hits = self._disease_hits(parsed)
-                    if not parsed.disease_hits:
-                        continue
-                    seen_ids.add(parsed.paper_id)
-                    collected.append(parsed)
+                for page in range(1, self.max_pages_per_term + 1):
+                    works = self._query_openalex(term, page=page)
+                    if not works:
+                        break
+                    for work in works:
+                        parsed = self._parse_work(work)
+                        if parsed.paper_id in seen_ids:
+                            continue
+                        parsed.disease_hits = self._disease_hits(parsed)
+                        if not parsed.disease_hits:
+                            continue
+                        seen_ids.add(parsed.paper_id)
+                        collected.append(parsed)
+                        if len(collected) >= max_results:
+                            break
                     if len(collected) >= max_results:
                         break
             if len(collected) >= max_results:
@@ -102,10 +115,11 @@ class RetrievalAssistant:
 
         return collected
 
-    def _query_openalex(self, search_term: str) -> list[dict[str, Any]]:
+    def _query_openalex(self, search_term: str, *, page: int) -> list[dict[str, Any]]:
         params = {
             "search": search_term,
             "per-page": self.per_page,
+            "page": page,
             "sort": "cited_by_count:desc",
             "mailto": self.mailto,
         }
@@ -281,8 +295,14 @@ def build_report(
     }
 
 
-def run_pipeline(*, max_results: int, output_path: Path, mailto: str) -> dict[str, Any]:
-    retriever = RetrievalAssistant(mailto=mailto)
+def run_pipeline(
+    *,
+    max_results: int,
+    output_path: Path,
+    mailto: str,
+    max_pages_per_term: int,
+) -> dict[str, Any]:
+    retriever = RetrievalAssistant(mailto=mailto, max_pages_per_term=max_pages_per_term)
     summarizer = SummarizerAssistant()
     reviewer = RelevanceReviewerAssistant()
 
@@ -300,6 +320,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Disease paper retrieval + summary + relevance review assistants")
     parser.add_argument("--max-results", type=int, default=12, help="Maximum number of papers to store")
     parser.add_argument(
+        "--max-pages-per-term",
+        type=int,
+        default=3,
+        help="Maximum OpenAlex pages to fetch for each query term",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("outputs/paper_assistant_report.json"),
@@ -315,7 +341,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    report = run_pipeline(max_results=args.max_results, output_path=args.output, mailto=args.mailto)
+    report = run_pipeline(
+        max_results=args.max_results,
+        output_path=args.output,
+        mailto=args.mailto,
+        max_pages_per_term=args.max_pages_per_term,
+    )
     print(json.dumps({"saved": str(args.output), "count": report["count"]}, ensure_ascii=False))
 
 
