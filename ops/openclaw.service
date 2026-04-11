@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenClaw Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/workspace/Paper_AI_Assistant
+EnvironmentFile=/workspace/Paper_AI_Assistant/.env.openclaw
+ExecStart=/usr/local/bin/openclaw start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

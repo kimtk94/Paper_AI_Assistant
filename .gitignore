@@ -1,0 +1,2 @@
+# Runtime secrets (do not commit)
+.env.openclaw
