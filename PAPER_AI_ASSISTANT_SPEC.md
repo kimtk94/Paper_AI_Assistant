@@ -221,3 +221,35 @@ python src/paper_assistants.py \
 - 매일/매주 배치로 `paper_assistants.py` 실행
 - 결과 JSON을 `src/multiomics_ingest.py`로 append-only 적재
 - 적재 데이터 기반으로 후속 아이디어 생성/랭킹(기존 `multiomics_models.py` 스키마 확장)
+
+---
+
+## 12) 논문 검토 효율화 템플릿 (Method / Data DB / Dataset 중심)
+
+논문을 빠르게 검토할 때는 3단계로 진행한다.
+
+1. **1차 스크리닝(5~10분)**: title/abstract/conclusion 위주로 문제-방법-데이터셋 매칭 확인  
+2. **2차 구조 파악(20~30분)**: methods / data / experiment split / metric 확인  
+3. **3차 심화(선별 논문만)**: ablation, leakage risk, external validation 확인
+
+### 표준 정리 항목
+
+- Method (핵심 접근법)
+- Data DB (데이터 출처/저장소)
+- Dataset (이름/버전/샘플 수/분할 여부)
+- Relevance (타깃 질병 주제 적합성)
+
+### 기존 `paper_assistant_report.json` 리스트 재검토 실행
+
+이미 생성된 JSON 리스트를 대상으로 Method/Data/Dataset 항목을 다시 정리하려면:
+
+```bash
+python src/paper_assistants.py \
+  --from-report outputs/paper_assistant_report.json \
+  --output outputs/paper_assistant_report_reviewed.json \
+  --review-md-output outputs/paper_assistant_review.md
+```
+
+산출물:
+- `outputs/paper_assistant_report_reviewed.json`: `method_data_review` 필드가 추가된 리뷰 결과
+- `outputs/paper_assistant_review.md`: Method / Data DB / Dataset / Relevance 표 형식 리포트

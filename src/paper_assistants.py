@@ -75,6 +75,15 @@ class RelevanceReview:
     reason: str
 
 
+@dataclass
+class MethodDataReview:
+    paper_id: str
+    method: str
+    data_db: str
+    dataset: str
+    checklist: list[str]
+
+
 class RetrievalAssistant:
     def __init__(
         self,
@@ -382,19 +391,79 @@ class RelevanceReviewerAssistant:
         return reviews
 
 
+class MethodDataReviewerAssistant:
+    def review(self, papers: list[PaperResult]) -> list[MethodDataReview]:
+        reviews: list[MethodDataReview] = []
+        for paper in papers:
+            joined = " ".join([paper.title, paper.abstract or "", " ".join(paper.concepts)]).lower()
+            method = self._infer_method(joined)
+            data_db = self._infer_data_db(paper)
+            dataset = self._infer_dataset(joined)
+            checklist = [
+                "train/val/test split 명시 여부 확인 필요",
+                "external validation 여부 확인 필요",
+                "data leakage 위험(환자/문서 단위 split) 확인 필요",
+            ]
+            reviews.append(
+                MethodDataReview(
+                    paper_id=paper.paper_id,
+                    method=method,
+                    data_db=data_db,
+                    dataset=dataset,
+                    checklist=checklist,
+                )
+            )
+        return reviews
+
+    @staticmethod
+    def _infer_method(joined_text: str) -> str:
+        if "mendelian" in joined_text:
+            return "Mendelian randomization"
+        if "gwas" in joined_text or "genome" in joined_text:
+            return "GWAS / 유전연관 분석"
+        if "single-cell" in joined_text:
+            return "Single-cell omics 분석"
+        if "meta-analysis" in joined_text or "systematic review" in joined_text:
+            return "Systematic review / meta-analysis"
+        if "deep learning" in joined_text or "neural network" in joined_text:
+            return "딥러닝 기반 예측 모델"
+        return "원문 Methods 섹션 확인 필요"
+
+    @staticmethod
+    def _infer_data_db(paper: PaperResult) -> str:
+        if paper.source:
+            return f"{paper.source} (retrieval source)"
+        return "데이터 출처 확인 필요"
+
+    @staticmethod
+    def _infer_dataset(joined_text: str) -> str:
+        if "uk biobank" in joined_text:
+            return "UK Biobank"
+        if "adni" in joined_text:
+            return "ADNI"
+        if "tcga" in joined_text:
+            return "TCGA"
+        if "mimic" in joined_text:
+            return "MIMIC"
+        return "논문 원문에서 dataset 이름/버전 확인 필요"
+
+
 def build_report(
     papers: list[PaperResult],
     summaries: list[PaperSummary],
     reviews: list[RelevanceReview],
+    method_data_reviews: list[MethodDataReview],
 ) -> dict[str, Any]:
     summary_map = {s.paper_id: s for s in summaries}
     review_map = {r.paper_id: r for r in reviews}
+    method_data_map = {m.paper_id: m for m in method_data_reviews}
 
     rows: list[dict[str, Any]] = []
     for paper in papers:
         row = asdict(paper)
         row["summary"] = asdict(summary_map[paper.paper_id])
         row["review"] = asdict(review_map[paper.paper_id])
+        row["method_data_review"] = asdict(method_data_map[paper.paper_id])
         rows.append(row)
 
     return {
@@ -417,18 +486,69 @@ def run_pipeline(
     retriever = RetrievalAssistant(mailto=mailto, max_pages_per_term=max_pages_per_term, show_progress=show_progress)
     summarizer = SummarizerAssistant()
     reviewer = RelevanceReviewerAssistant()
+    method_data_reviewer = MethodDataReviewerAssistant()
 
     processed_index = _load_processed_index(index_path, show_progress=show_progress)
     papers = retriever.fetch(max_results=max_results, skip_index=processed_index)
     summaries = summarizer.summarize(papers)
     reviews = reviewer.review(papers)
-    report = build_report(papers, summaries, reviews)
+    method_data_reviews = method_data_reviewer.review(papers)
+    report = build_report(papers, summaries, reviews, method_data_reviews)
     processed_index.extend(papers)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     _save_processed_index(index_path, processed_index, show_progress=show_progress)
     return report
+
+
+def _load_papers_from_report(report_path: Path) -> list[PaperResult]:
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    rows = payload.get("results", [])
+    papers: list[PaperResult] = []
+    for row in rows:
+        papers.append(
+            PaperResult(
+                paper_id=str(row.get("paper_id", "")),
+                title=str(row.get("title", "(untitled)")),
+                year=row.get("year"),
+                doi=row.get("doi"),
+                pmid=row.get("pmid"),
+                openalex_id=str(row.get("openalex_id", row.get("paper_id", ""))),
+                source=str(row.get("source", "unknown")),
+                authors=[str(a) for a in row.get("authors", [])],
+                abstract=row.get("abstract"),
+                concepts=[str(c) for c in row.get("concepts", [])],
+                primary_location_url=row.get("primary_location_url"),
+                korea_affiliation_present=bool(row.get("korea_affiliation_present", False)),
+                korea_affiliation_evidence=[str(v) for v in row.get("korea_affiliation_evidence", [])],
+                disease_hits=[str(v) for v in row.get("disease_hits", [])],
+            )
+        )
+    return papers
+
+
+def _write_review_markdown(report: dict[str, Any], md_path: Path) -> None:
+    lines = [
+        "# Paper Review (Method / Data DB / Dataset)",
+        "",
+        f"- Generated at (UTC): {report.get('generated_at_utc', '')}",
+        f"- Paper count: {report.get('count', 0)}",
+        "",
+        "| Title | Method | Data DB | Dataset | Relevance |",
+        "|---|---|---|---|---|",
+    ]
+    for row in report.get("results", []):
+        review = row.get("method_data_review", {})
+        rel = row.get("review", {})
+        title = str(row.get("title", "")).replace("|", "/")
+        method = str(review.get("method", "")).replace("|", "/")
+        data_db = str(review.get("data_db", "")).replace("|", "/")
+        dataset = str(review.get("dataset", "")).replace("|", "/")
+        relevance = "relevant" if rel.get("is_relevant") else "check-needed"
+        lines.append(f"| {title} | {method} | {data_db} | {dataset} | {relevance} |")
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def parse_args() -> argparse.Namespace:
@@ -462,19 +582,47 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable pipeline progress logs",
     )
+    parser.add_argument(
+        "--from-report",
+        type=Path,
+        default=None,
+        help="Re-process an existing JSON report's results list instead of fetching new papers",
+    )
+    parser.add_argument(
+        "--review-md-output",
+        type=Path,
+        default=None,
+        help="Optional markdown output path for method/data/dataset review table",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    report = run_pipeline(
-        max_results=args.max_results,
-        output_path=args.output,
-        index_path=args.index_path,
-        mailto=args.mailto,
-        max_pages_per_term=args.max_pages_per_term,
-        show_progress=not args.quiet,
-    )
+    if args.from_report:
+        papers = _load_papers_from_report(args.from_report)
+        summarizer = SummarizerAssistant()
+        reviewer = RelevanceReviewerAssistant()
+        method_data_reviewer = MethodDataReviewerAssistant()
+        report = build_report(
+            papers,
+            summarizer.summarize(papers),
+            reviewer.review(papers),
+            method_data_reviewer.review(papers),
+        )
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    else:
+        report = run_pipeline(
+            max_results=args.max_results,
+            output_path=args.output,
+            index_path=args.index_path,
+            mailto=args.mailto,
+            max_pages_per_term=args.max_pages_per_term,
+            show_progress=not args.quiet,
+        )
+    if args.review_md_output:
+        _write_review_markdown(report, args.review_md_output)
     print(json.dumps({"saved": str(args.output), "count": report["count"]}, ensure_ascii=False))
 
 
