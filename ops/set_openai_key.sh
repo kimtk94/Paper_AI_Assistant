@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env sh
+set -eu
 
 if [ "${1:-}" = "" ]; then
   echo "Usage: $0 <OPENAI_API_KEY>"
@@ -7,7 +7,7 @@ if [ "${1:-}" = "" ]; then
 fi
 
 KEY="$1"
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 ENV_FILE="$REPO_DIR/.env.openclaw"
 
 if [ ! -f "$ENV_FILE" ]; then

@@ -1,7 +1,7 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env sh
+set -eu
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 SERVICE_SRC="$REPO_DIR/ops/openclaw.service"
 SERVICE_DST="/etc/systemd/system/openclaw.service"
 
