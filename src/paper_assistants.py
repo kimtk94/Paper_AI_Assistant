@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shlex
 import subprocess
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -116,11 +115,10 @@ class MissingPdfCandidate:
 
 @dataclass
 class ScihubDownloadAttempt:
-    identifier: str
-    paper_id: str
-    command: str
+    command: list[str]
     returncode: int
-    success: bool
+    input_file: str
+    candidate_count: int
     stdout_tail: str
     stderr_tail: str
 
@@ -896,41 +894,49 @@ def _collect_missing_pdf_candidates(
 def _run_scihub_cli(
     candidates: list[MissingPdfCandidate],
     *,
-    command_template: str,
+    scihub_bin: str,
     outdir: Path,
+    input_file: Path,
+    email: str | None,
+    extra_args: list[str],
 ) -> dict[str, Any]:
-    attempts: list[ScihubDownloadAttempt] = []
-
+    seen: set[str] = set()
+    ids: list[str] = []
     for candidate in candidates:
-        command = command_template.format(
-            identifier=candidate.identifier,
-            doi=candidate.doi or "",
-            pmid=candidate.pmid or "",
-            outdir=str(outdir),
-        )
-        proc = subprocess.run(shlex.split(command), capture_output=True, text=True)
-        stdout_tail = proc.stdout[-500:]
-        stderr_tail = proc.stderr[-500:]
-        attempts.append(
-            ScihubDownloadAttempt(
-                identifier=candidate.identifier,
-                paper_id=candidate.paper_id,
-                command=command,
-                returncode=proc.returncode,
-                success=proc.returncode == 0,
-                stdout_tail=stdout_tail,
-                stderr_tail=stderr_tail,
-            )
-        )
-        status = "OK" if proc.returncode == 0 else "FAIL"
-        print(f"[scihub:{status}] {candidate.identifier}")
+        key = candidate.identifier.strip()
+        if key and key not in seen:
+            seen.add(key)
+            ids.append(key)
+
+    input_file.parent.mkdir(parents=True, exist_ok=True)
+    input_file.write_text("\n".join(ids) + "\n", encoding="utf-8")
+
+    command = [scihub_bin, str(input_file), "-o", str(outdir)]
+    if email:
+        command.extend(["--email", email])
+    command.extend(extra_args)
+
+    proc = subprocess.run(command, capture_output=True, text=True)
+    stdout_tail = proc.stdout[-1000:]
+    stderr_tail = proc.stderr[-1000:]
+    status = "OK" if proc.returncode == 0 else "FAIL"
+    print(f"[scihub:{status}] input={input_file} ids={len(ids)} outdir={outdir}")
+
+    attempt = ScihubDownloadAttempt(
+        command=command,
+        returncode=proc.returncode,
+        input_file=str(input_file),
+        candidate_count=len(ids),
+        stdout_tail=stdout_tail,
+        stderr_tail=stderr_tail,
+    )
 
     return {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "total": len(attempts),
-        "success": sum(1 for a in attempts if a.success),
-        "failed": sum(1 for a in attempts if not a.success),
-        "results": [asdict(a) for a in attempts],
+        "total_runs": 1,
+        "success_runs": 1 if proc.returncode == 0 else 0,
+        "failed_runs": 0 if proc.returncode == 0 else 1,
+        "results": [asdict(attempt)],
     }
 
 
@@ -1012,12 +1018,31 @@ def parse_args() -> argparse.Namespace:
         help="JSON report path for papers that still miss PDF after legal OA download attempts.",
     )
     parser.add_argument(
-        "--scihub-command-template",
+        "--retry-missing-with-scihub-cli",
+        action="store_true",
+        help="Retry missing-PDF candidates via scihub-cli batch mode.",
+    )
+    parser.add_argument(
+        "--scihub-cli-bin",
+        default="scihub-cli",
+        help="scihub-cli executable name or full path.",
+    )
+    parser.add_argument(
+        "--scihub-input-file",
+        type=Path,
+        default=Path("outputs/scihub_missing_input.txt"),
+        help="Input text file path generated for scihub-cli (one identifier per line).",
+    )
+    parser.add_argument(
+        "--scihub-email",
         default=None,
-        help=(
-            "Optional shell-like command template to retry missing PDFs with scihub-cli. "
-            "Supported placeholders: {identifier}, {doi}, {pmid}, {outdir}."
-        ),
+        help="Optional email passed to scihub-cli --email (for Unpaywall integration).",
+    )
+    parser.add_argument(
+        "--scihub-extra-args",
+        nargs="*",
+        default=[],
+        help="Additional arguments passed through to scihub-cli (e.g. --verbose --no-fast-fail).",
     )
     parser.add_argument(
         "--scihub-report",
@@ -1079,18 +1104,25 @@ def main() -> None:
         )
         print(json.dumps({"missing_pdf_report_saved": str(args.missing_pdf_report), "total": len(missing_candidates)}))
 
-        if args.scihub_command_template and missing_candidates:
+        if args.retry_missing_with_scihub_cli and missing_candidates:
             scihub_payload = _run_scihub_cli(
                 missing_candidates,
-                command_template=args.scihub_command_template,
+                scihub_bin=args.scihub_cli_bin,
                 outdir=args.pdf_outdir,
+                input_file=args.scihub_input_file,
+                email=args.scihub_email,
+                extra_args=args.scihub_extra_args,
             )
             args.scihub_report.parent.mkdir(parents=True, exist_ok=True)
             args.scihub_report.write_text(
                 json.dumps(scihub_payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            print(json.dumps({"scihub_report_saved": str(args.scihub_report), "success": scihub_payload["success"]}))
+            print(
+                json.dumps(
+                    {"scihub_report_saved": str(args.scihub_report), "success_runs": scihub_payload["success_runs"]}
+                )
+            )
     print(json.dumps({"saved": str(args.output), "count": report["count"]}, ensure_ascii=False))
 
 
