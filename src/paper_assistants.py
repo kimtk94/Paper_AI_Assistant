@@ -17,15 +17,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlencode
-from urllib.request import urlopen
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+import xml.etree.ElementTree as ET
 from typing import Any
 
 OPENALEX_WORKS_URL = "https://api.openalex.org/works"
+IDCONV_URL = "https://pmc.ncbi.nlm.nih.gov/tools/idconv/api/v1/articles/"
+OA_FCGI_URL = "https://pmc.ncbi.nlm.nih.gov/utils/oa/oa.fcgi"
+UNPAYWALL_URL = "https://api.unpaywall.org/v2"
 DEFAULT_MAILTO = "kimtk7830@naver.com"
 TARGET_DISEASES = {
     "type_2_diabetes": [
@@ -82,6 +87,19 @@ class MethodDataReview:
     data_db: str
     dataset: str
     checklist: list[str]
+
+
+@dataclass
+class DownloadResult:
+    input_id: str
+    normalized_id: str
+    doi: str | None
+    pmid: str | None
+    pmcid: str | None
+    downloaded: bool
+    filename: str | None
+    source_url: str | None
+    reason: str
 
 
 class RetrievalAssistant:
@@ -448,6 +466,146 @@ class MethodDataReviewerAssistant:
         return "논문 원문에서 dataset 이름/버전 확인 필요"
 
 
+class PdfDownloader:
+    def __init__(self, *, outdir: Path, timeout: int = 30, unpaywall_email: str | None = None) -> None:
+        self.outdir = outdir
+        self.timeout = timeout
+        self.unpaywall_email = unpaywall_email
+        self.outdir.mkdir(parents=True, exist_ok=True)
+
+    def download(self, raw_identifier: str) -> DownloadResult:
+        normalized = normalize_identifier(raw_identifier)
+        mapping = self._id_convert(normalized)
+        doi = mapping.get("doi")
+        pmid = mapping.get("pmid")
+        pmcid = mapping.get("pmcid")
+
+        if pmcid:
+            pmc_pdf_url = self._resolve_pmc_pdf_url(pmcid)
+            if pmc_pdf_url:
+                filename = self._safe_filename(normalized, pmcid=pmcid, doi=doi) + ".pdf"
+                dst = self.outdir / filename
+                if self._download_file(pmc_pdf_url, dst):
+                    return DownloadResult(
+                        input_id=raw_identifier,
+                        normalized_id=normalized,
+                        doi=doi,
+                        pmid=pmid,
+                        pmcid=pmcid,
+                        downloaded=True,
+                        filename=filename,
+                        source_url=pmc_pdf_url,
+                        reason="Downloaded from PubMed Central OA endpoint.",
+                    )
+
+        if doi and self.unpaywall_email:
+            pdf_url = self._resolve_unpaywall_pdf_url(doi)
+            if pdf_url:
+                filename = self._safe_filename(normalized, pmcid=pmcid, doi=doi) + ".pdf"
+                dst = self.outdir / filename
+                if self._download_file(pdf_url, dst):
+                    return DownloadResult(
+                        input_id=raw_identifier,
+                        normalized_id=normalized,
+                        doi=doi,
+                        pmid=pmid,
+                        pmcid=pmcid,
+                        downloaded=True,
+                        filename=filename,
+                        source_url=pdf_url,
+                        reason="Downloaded from Unpaywall open-access link.",
+                    )
+
+        if doi and not self.unpaywall_email:
+            reason = "No PMC OA PDF found. Provide --unpaywall-email to try legal OA mirrors by DOI."
+        else:
+            reason = "No open-access PDF found from configured sources."
+
+        return DownloadResult(
+            input_id=raw_identifier,
+            normalized_id=normalized,
+            doi=doi,
+            pmid=pmid,
+            pmcid=pmcid,
+            downloaded=False,
+            filename=None,
+            source_url=None,
+            reason=reason,
+        )
+
+    def _id_convert(self, identifier: str) -> dict[str, str | None]:
+        qid = quote(identifier, safe="")
+        url = f"{IDCONV_URL}?ids={qid}&format=json"
+        try:
+            payload = http_get_json(url, timeout=self.timeout)
+        except (URLError, HTTPError, json.JSONDecodeError):
+            return {"doi": extract_doi(identifier), "pmid": extract_pmid(identifier), "pmcid": extract_pmcid(identifier)}
+
+        records = payload.get("records") or []
+        if not records:
+            return {"doi": extract_doi(identifier), "pmid": extract_pmid(identifier), "pmcid": extract_pmcid(identifier)}
+
+        first = records[0]
+        return {
+            "doi": text_or_none(first.get("doi")) or extract_doi(identifier),
+            "pmid": digits_only(text_or_none(first.get("pmid"))) or extract_pmid(identifier),
+            "pmcid": normalize_pmcid(text_or_none(first.get("pmcid")) or extract_pmcid(identifier)),
+        }
+
+    def _resolve_pmc_pdf_url(self, pmcid: str) -> str | None:
+        url = f"{OA_FCGI_URL}?id={quote(pmcid, safe='')}"
+        try:
+            xml_text = http_get_text(url, timeout=self.timeout)
+        except (URLError, HTTPError):
+            return None
+
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError:
+            return None
+
+        for link in root.findall(".//link"):
+            fmt = (link.attrib.get("format") or "").lower()
+            href = link.attrib.get("href")
+            if fmt == "pdf" and href:
+                return href
+        return None
+
+    def _resolve_unpaywall_pdf_url(self, doi: str) -> str | None:
+        email = quote(self.unpaywall_email or "", safe="")
+        doi_q = quote(doi, safe="")
+        url = f"{UNPAYWALL_URL}/{doi_q}?email={email}"
+        try:
+            payload = http_get_json(url, timeout=self.timeout)
+        except (URLError, HTTPError, json.JSONDecodeError):
+            return None
+        best = payload.get("best_oa_location") or {}
+        pdf = text_or_none(best.get("url_for_pdf"))
+        if pdf:
+            return pdf
+        return text_or_none(best.get("url"))
+
+    def _download_file(self, url: str, dst: Path) -> bool:
+        req = Request(url, headers={"User-Agent": "PaperAI-Assistant/1.0"})
+        try:
+            with urlopen(req, timeout=self.timeout) as response:
+                data = response.read()
+        except (URLError, HTTPError):
+            return False
+        if not data:
+            return False
+        dst.write_bytes(data)
+        return True
+
+    @staticmethod
+    def _safe_filename(identifier: str, *, pmcid: str | None, doi: str | None) -> str:
+        base = pmcid or doi or identifier
+        base = base.replace("/", "_")
+        base = re.sub(r"[^A-Za-z0-9._-]", "_", base)
+        base = re.sub(r"_+", "_", base).strip("_")
+        return base[:160] or "paper"
+
+
 def build_report(
     papers: list[PaperResult],
     summaries: list[PaperSummary],
@@ -551,6 +709,126 @@ def _write_review_markdown(report: dict[str, Any], md_path: Path) -> None:
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def http_get_json(url: str, *, timeout: int) -> dict[str, Any]:
+    req = Request(url, headers={"User-Agent": "PaperAI-Assistant/1.0"})
+    with urlopen(req, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def http_get_text(url: str, *, timeout: int) -> str:
+    req = Request(url, headers={"User-Agent": "PaperAI-Assistant/1.0"})
+    with urlopen(req, timeout=timeout) as response:
+        return response.read().decode("utf-8")
+
+
+def text_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def digits_only(text: str | None) -> str | None:
+    if not text:
+        return None
+    digits = "".join(ch for ch in text if ch.isdigit())
+    return digits or None
+
+
+def normalize_pmcid(text: str | None) -> str | None:
+    if not text:
+        return None
+    cleaned = text.upper().strip()
+    if not cleaned.startswith("PMC"):
+        if cleaned.isdigit():
+            cleaned = f"PMC{cleaned}"
+        else:
+            return None
+    return cleaned
+
+
+def extract_doi(text: str) -> str | None:
+    match = re.search(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", text)
+    return match.group(0) if match else None
+
+
+def extract_pmid(text: str) -> str | None:
+    if "pmid" in text.lower():
+        nums = re.findall(r"\d+", text)
+        return nums[0] if nums else None
+    if text.isdigit() and not text.upper().startswith("PMC"):
+        return text
+    return None
+
+
+def extract_pmcid(text: str) -> str | None:
+    match = re.search(r"PMC\d+", text.upper())
+    if match:
+        return match.group(0)
+    return None
+
+
+def normalize_identifier(text: str) -> str:
+    raw = text.strip()
+    if not raw:
+        return raw
+    doi = extract_doi(raw)
+    if doi:
+        return doi
+    pmcid = extract_pmcid(raw)
+    if pmcid:
+        return pmcid
+    pmid = extract_pmid(raw)
+    if pmid:
+        return pmid
+    return raw
+
+
+def _download_pdfs_for_papers(
+    papers: list[PaperResult],
+    *,
+    outdir: Path,
+    report_path: Path,
+    timeout: int,
+    unpaywall_email: str | None,
+) -> dict[str, Any]:
+    downloader = PdfDownloader(outdir=outdir, timeout=timeout, unpaywall_email=unpaywall_email)
+    raw_identifiers: list[str] = []
+    for paper in papers:
+        if paper.pmid:
+            raw_identifiers.append(paper.pmid)
+            continue
+        if paper.doi:
+            raw_identifiers.append(paper.doi)
+
+    seen: set[str] = set()
+    identifiers: list[str] = []
+    for identifier in raw_identifiers:
+        key = identifier.strip()
+        if key and key not in seen:
+            seen.add(key)
+            identifiers.append(key)
+
+    results: list[DownloadResult] = []
+    for identifier in identifiers:
+        result = downloader.download(identifier)
+        results.append(result)
+        status = "OK" if result.downloaded else "MISS"
+        print(f"[pdf:{status}] {identifier} -> {result.reason}")
+
+    payload = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "total": len(results),
+        "downloaded": sum(1 for r in results if r.downloaded),
+        "missed": sum(1 for r in results if not r.downloaded),
+        "results": [asdict(r) for r in results],
+    }
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps({"pdf_report_saved": str(report_path), "downloaded": payload["downloaded"]}, ensure_ascii=False))
+    return payload
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Disease paper retrieval + summary + relevance review assistants")
     parser.add_argument("--max-results", type=int, default=12, help="Maximum number of papers to store")
@@ -594,6 +872,34 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional markdown output path for method/data/dataset review table",
     )
+    parser.add_argument(
+        "--download-pdfs",
+        action="store_true",
+        help="Download legal OA PDFs for collected papers using PMID/DOI.",
+    )
+    parser.add_argument(
+        "--pdf-outdir",
+        type=Path,
+        default=Path("outputs/pdfs"),
+        help="Directory where downloaded PDFs are stored.",
+    )
+    parser.add_argument(
+        "--pdf-report",
+        type=Path,
+        default=Path("outputs/pdf_download_report.json"),
+        help="JSON report path for PDF download results.",
+    )
+    parser.add_argument(
+        "--unpaywall-email",
+        default=None,
+        help="Email for Unpaywall API (optional DOI OA fallback).",
+    )
+    parser.add_argument(
+        "--pdf-timeout",
+        type=int,
+        default=30,
+        help="HTTP timeout seconds for PDF download requests.",
+    )
     return parser.parse_args()
 
 
@@ -621,8 +927,17 @@ def main() -> None:
             max_pages_per_term=args.max_pages_per_term,
             show_progress=not args.quiet,
         )
+        papers = _load_papers_from_report(args.output)
     if args.review_md_output:
         _write_review_markdown(report, args.review_md_output)
+    if args.download_pdfs:
+        _download_pdfs_for_papers(
+            papers,
+            outdir=args.pdf_outdir,
+            report_path=args.pdf_report,
+            timeout=args.pdf_timeout,
+            unpaywall_email=args.unpaywall_email,
+        )
     print(json.dumps({"saved": str(args.output), "count": report["count"]}, ensure_ascii=False))
 
 
