@@ -185,3 +185,39 @@ python src/multiomics_models.py
 ```
 
 `pydantic`이 설치되어 있으면 샘플 JSON 검증 후 레코드 개수를 출력한다.
+
+---
+
+## 11) 3-Assistant 실행 구조 (T2D + AD + Korea affiliation 체크)
+
+`src/paper_assistants.py` 기준으로 아래 3개 Assistant를 한 파이프라인으로 분리했다.
+
+1. **RetrievalAssistant**
+   - OpenAlex API에서 `type 2 diabetes`, `Alzheimer's disease` 관련 논문 메타데이터/초록 수집
+   - 저자 소속 문자열(`raw_affiliation_strings`) 및 기관 국가코드(`country_code=KR`)를 확인해
+     `korea_affiliation_present` 필드를 계산
+2. **SummarizerAssistant**
+   - 초록 기반으로 핵심 요약/방법론 힌트/한계 코멘트 생성
+3. **RelevanceReviewerAssistant**
+   - 질병 키워드 매칭으로 주제 적합성(`is_relevant`) 점검
+
+### 실행 예시
+
+```bash
+python src/paper_assistants.py \
+  --max-results 10 \
+  --output outputs/paper_assistant_report.json \
+  --mailto you@example.com
+```
+
+출력 JSON의 핵심 필드:
+- `disease_hits`: `type_2_diabetes`, `alzheimers_disease` 매칭 결과
+- `korea_affiliation_present`: 저자 주소/소속 내 Korea 여부
+- `korea_affiliation_evidence`: Korea 판단 근거 텍스트
+- `summary`, `review`: 요약과 주제 적합성 평가 결과
+
+### 권장 운영 플로우
+
+- 매일/매주 배치로 `paper_assistants.py` 실행
+- 결과 JSON을 `src/multiomics_ingest.py`로 append-only 적재
+- 적재 데이터 기반으로 후속 아이디어 생성/랭킹(기존 `multiomics_models.py` 스키마 확장)
