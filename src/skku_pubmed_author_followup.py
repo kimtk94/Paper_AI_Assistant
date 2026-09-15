@@ -27,7 +27,7 @@ import os
 import re
 import sys
 from collections import Counter, defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -56,14 +56,14 @@ class FollowedPaper:
     tracked_author_keys: list[str]
     current_affiliations: list[str]
     skku_current: bool
-    primary_domain: str
-    research_domains: list[str]
-    topic_terms: list[str]
     disease_terms: list[str]
     methods: list[str]
     data_types: list[str]
     research_stage: str
     research_question: str
+    primary_domain: str = ""
+    research_domains: list[str] = field(default_factory=list)
+    topic_terms: list[str] = field(default_factory=list)
 
 
 @dataclass
