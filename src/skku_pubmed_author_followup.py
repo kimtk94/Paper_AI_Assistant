@@ -69,9 +69,6 @@ class ContinuationEdge:
     author_key: str
     confidence: str
     evidence: str
-    source_stage: str = ""
-    target_stage: str = ""
-    progression: str = ""
 
 
 @dataclass
@@ -83,6 +80,9 @@ class ResearchLineageEdge:
     tracked_authors: list[str]
     confidence: str
     evidence: str
+    source_stage: str = ""
+    target_stage: str = ""
+    progression: str = ""
 
 
 def norm_name(value: str) -> str:
