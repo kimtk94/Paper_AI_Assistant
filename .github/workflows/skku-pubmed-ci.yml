@@ -45,6 +45,7 @@ jobs:
           python -m py_compile \
             src/skku_pubmed_lineage.py \
             src/skku_pubmed_annotation.py \
+            src/skku_pubmed_seed_profiles.py \
             src/skku_pubmed_author_followup.py \
             src/skku_pubmed_researcher_network.py \
             src/skku_pubmed_research_communities.py
@@ -126,6 +127,45 @@ jobs:
           assert summary["pubmed_total_hits"] >= len(papers)
           assert summary["verified_papers"] == len(papers)
           print("PubMed output validation:", summary)
+          PY
+
+      - name: Live partitioned pagination crawl
+        run: |
+          python src/skku_pubmed_lineage.py \
+            --start-year 2025 \
+            --end-year 2026 \
+            --all-results \
+            --max-results 25 \
+            --page-size 7 \
+            --skip-citations \
+            --topic-threshold 0.30 \
+            --output-dir /tmp/skku_paged_smoke
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("/tmp/skku_paged_smoke")
+          summary = json.loads((root / "summary.json").read_text(encoding="utf-8"))
+          checkpoint = json.loads(
+              (root / "crawl_checkpoint.json").read_text(encoding="utf-8")
+          )
+          windows = json.loads(
+              (root / "crawl_windows.json").read_text(encoding="utf-8")
+          )
+
+          assert summary["retrieval_mode"] == "partitioned_all_results", summary
+          assert summary["retrieved_pmids"] == 25, summary
+          assert summary["pubmed_total_hits"] >= 25, summary
+          assert summary["crawl_windows"] >= 1, summary
+          assert len(checkpoint["retrieved_pmids"]) == 25, checkpoint
+          assert len(windows) >= 1, windows
+          assert any(
+              item["retrieved_target"] > 7
+              for item in windows
+          ), windows
+          print("Partitioned crawl validation:", summary)
+          print("Crawl windows:", windows)
           PY
 
       - name: Discover a real SKKU ORCID with multiple PubMed papers
@@ -348,6 +388,58 @@ jobs:
           print("Top network edges:", edges[:5])
           PY
 
+      - name: Build live full-corpus seed community map
+        run: |
+          python src/skku_pubmed_seed_profiles.py \
+            --papers-json /tmp/skku_pubmed_lineage/papers.json \
+            --output-dir /tmp/skku_seed_map
+
+          python src/skku_pubmed_researcher_network.py \
+            --input-dir /tmp/skku_seed_map \
+            --skip-thematic \
+            --topic-threshold 0.30
+
+          python src/skku_pubmed_research_communities.py \
+            --input-dir /tmp/skku_seed_map \
+            --min-edge-score 0.65 \
+            --strong-edge-score 0.85
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("/tmp/skku_seed_map")
+          profile = json.loads(
+              (root / "seed_profile_summary.json").read_text(encoding="utf-8")
+          )
+          network = json.loads(
+              (root / "researcher_network_summary.json").read_text(encoding="utf-8")
+          )
+          communities = json.loads(
+              (root / "research_community_summary.json").read_text(encoding="utf-8")
+          )
+          edges = json.loads(
+              (root / "researcher_network_edges.json").read_text(encoding="utf-8")
+          )
+
+          assert profile["seed_papers"] >= 50, profile
+          assert profile["researchers"] >= 2, profile
+          assert profile["papers_with_multiple_skku_researchers"] >= 1, profile
+          assert network["researchers"] == profile["researchers"], (network, profile)
+          assert network["thematic_enabled"] is False, network
+          assert network["network_edges"] >= 1, network
+          assert edges, edges
+          assert communities["researchers"] == profile["researchers"], communities
+          assert communities["communities"] >= 1, communities
+          assert (root / "researcher_network.html").exists()
+          assert (root / "research_community_map.html").exists()
+
+          print("Full seed profile validation:", profile)
+          print("Full seed network validation:", network)
+          print("Full seed communities:", communities)
+          print("Top observed edges:", edges[:5])
+          PY
+
       - name: Discover live multi-researcher SKKU seed
         run: |
           python - <<'PY'
@@ -495,6 +587,8 @@ jobs:
           path: |
             /tmp/skku_pubmed_lineage
             /tmp/skku_pubmed_followup
+            /tmp/skku_paged_smoke
+            /tmp/skku_seed_map
             /tmp/skku_orcid_seed.json
             /tmp/skku_orcid_selection.json
             /tmp/skku_multi_seed.json
