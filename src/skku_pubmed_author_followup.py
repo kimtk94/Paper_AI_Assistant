@@ -1064,8 +1064,6 @@ def main() -> int:
         row["current_affiliations"] = " | ".join(item.current_affiliations)
         row["research_domains"] = "; ".join(item.research_domains)
         row["topic_terms"] = "; ".join(item.topic_terms)
-        row["research_domains"] = "; ".join(item.research_domains)
-        row["topic_terms"] = "; ".join(item.topic_terms)
         row["disease_terms"] = "; ".join(item.disease_terms)
         row["methods"] = "; ".join(item.methods)
         row["data_types"] = "; ".join(item.data_types)
@@ -1075,6 +1073,8 @@ def main() -> int:
     annotation_rows = []
     for item in annotations.values():
         row = asdict(item)
+        row["research_domains"] = "; ".join(item.research_domains)
+        row["topic_terms"] = "; ".join(item.topic_terms)
         row["disease_terms"] = "; ".join(item.disease_terms)
         row["methods"] = "; ".join(item.methods)
         row["data_types"] = "; ".join(item.data_types)
