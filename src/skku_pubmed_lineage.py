@@ -831,7 +831,14 @@ def build_edges(
     include_citations: bool,
     topic_threshold: float,
     max_pairs: int,
+    stats: dict | None = None,
 ) -> list[Edge]:
+    """Build paper-level lineage edges without O(N^2) author matching.
+
+    Shared-author lineage is generated from an inverted author->paper index and
+    connects chronological consecutive papers for each researcher. Topic similarity
+    remains exploratory and can be bounded by max_pairs.
+    """
     by_id = {p.pmid: p for p in papers}
     paper_ids = set(by_id)
     edges: dict[tuple[str, str, str], Edge] = {}
@@ -855,36 +862,72 @@ def build_edges(
             if idx % 25 == 0:
                 print(f"[citation] {idx}/{len(papers)} papers checked", file=sys.stderr)
 
-    pair_count = 0
-    topic_cache = {p.pmid: topic_set(p) for p in papers}
-    for i, a in enumerate(papers):
-        for b in papers[i + 1 :]:
-            pair_count += 1
-            if max_pairs and pair_count > max_pairs:
-                break
+    # Exhaustive shared-author lineage via an inverted index. This is O(total
+    # author-paper memberships), not O(number_of_papers^2).
+    author_index: dict[str, dict[str, Paper]] = {}
+    author_labels: dict[str, set[str]] = {}
+    for paper in papers:
+        for author in paper.authors:
+            if not author.is_skku:
+                continue
+            if author.orcid:
+                identity = f"orcid:{author.orcid}"
+            else:
+                name_key = re.sub(r"[^a-z0-9]+", " ", author.name.lower()).strip()
+                if not name_key:
+                    continue
+                identity = f"name:{name_key}"
+            author_index.setdefault(identity, {})[paper.pmid] = paper
+            author_labels.setdefault(identity, set()).add(author.name)
 
+    for identity, indexed in author_index.items():
+        ordered = sorted(
+            indexed.values(),
+            key=lambda p: (
+                p.year or 9999,
+                int(p.pmid) if p.pmid.isdigit() else p.pmid,
+            ),
+        )
+        if len(ordered) < 2:
+            continue
+        for a, b in zip(ordered, ordered[1:]):
             older, newer = direction(a, b)
-            shared_names = sorted(set(a.skku_authors) & set(b.skku_authors))
-            shared_orcids = sorted(set(a.skku_orcids) & set(b.skku_orcids))
+            key = (older.pmid, newer.pmid, "shared_skku_author")
+            weight = 0.95 if identity.startswith("orcid:") else 0.80
+            if identity.startswith("orcid:"):
+                evidence_piece = f"ORCID={identity.split(':', 1)[1]}"
+            else:
+                evidence_piece = "author=" + sorted(author_labels.get(identity, {identity}))[0]
 
-            if shared_orcids or shared_names:
-                weight = 0.95 if shared_orcids else 0.80
-                evidence_parts = []
-                if shared_orcids:
-                    evidence_parts.append("ORCID=" + ", ".join(shared_orcids))
-                if shared_names:
-                    evidence_parts.append("authors=" + ", ".join(shared_names))
-                key = (older.pmid, newer.pmid, "shared_skku_author")
+            existing = edges.get(key)
+            if existing is None:
                 edges[key] = Edge(
                     source=older.pmid,
                     target=newer.pmid,
                     relation="shared_skku_author",
                     weight=weight,
-                    evidence="; ".join(evidence_parts),
+                    evidence=evidence_piece,
                 )
+            else:
+                pieces = [x.strip() for x in existing.evidence.split(";") if x.strip()]
+                if evidence_piece not in pieces:
+                    pieces.append(evidence_piece)
+                existing.weight = max(existing.weight, weight)
+                existing.evidence = "; ".join(pieces)
+
+    topic_cache = {p.pmid: topic_set(p) for p in papers}
+    pair_count = 0
+    pair_limit_hit = False
+    for i, a in enumerate(papers):
+        for b in papers[i + 1 :]:
+            if max_pairs and pair_count >= max_pairs:
+                pair_limit_hit = True
+                break
+            pair_count += 1
 
             sim = jaccard(topic_cache[a.pmid], topic_cache[b.pmid])
             if sim >= topic_threshold:
+                older, newer = direction(a, b)
                 key = (older.pmid, newer.pmid, "topic_similarity")
                 edges[key] = Edge(
                     source=older.pmid,
@@ -894,8 +937,24 @@ def build_edges(
                     evidence=f"MeSH/keyword Jaccard={sim:.3f}",
                 )
 
-        if max_pairs and pair_count > max_pairs:
+        if pair_limit_hit:
             break
+
+    if stats is not None:
+        total_possible = len(papers) * max(0, len(papers) - 1) // 2
+        stats.update(
+            {
+                "shared_author_mode": "consecutive_inverted_index",
+                "shared_author_identities": len(author_index),
+                "shared_author_edges": sum(
+                    edge.relation == "shared_skku_author" for edge in edges.values()
+                ),
+                "topic_pairs_evaluated": pair_count,
+                "topic_pairs_possible": total_possible,
+                "topic_similarity_exhaustive": pair_count >= total_possible,
+                "topic_pair_limit": max_pairs,
+            }
+        )
 
     return sorted(
         edges.values(),
@@ -1195,14 +1254,22 @@ def main() -> int:
     papers.sort(key=lambda p: (p.year, p.pmid), reverse=True)
     print(f"[verify] SKKU affiliation verified={len(papers):,}", file=sys.stderr)
 
+    graph_stats: dict = {}
     edges = build_edges(
         papers=papers,
         client=client,
         include_citations=not args.skip_citations,
         topic_threshold=args.topic_threshold,
         max_pairs=args.max_pairs,
+        stats=graph_stats,
     )
-    print(f"[graph] edges={len(edges):,}", file=sys.stderr)
+    print(
+        f"[graph] edges={len(edges):,}; "
+        f"shared-author={graph_stats.get('shared_author_edges', 0):,}; "
+        f"topic pairs={graph_stats.get('topic_pairs_evaluated', 0):,}/"
+        f"{graph_stats.get('topic_pairs_possible', 0):,}",
+        file=sys.stderr,
+    )
 
     (out / "query.txt").write_text(query + "\n", encoding="utf-8")
     (out / "papers.json").write_text(
@@ -1231,6 +1298,7 @@ def main() -> int:
         "verified_papers": len(papers),
         "edges": len(edges),
         "edge_types": dict(Counter(e.relation for e in edges)),
+        **graph_stats,
         "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     (out / "summary.json").write_text(
