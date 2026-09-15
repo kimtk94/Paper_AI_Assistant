@@ -26,7 +26,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from skku_pubmed_annotation import annotate_paper
-from skku_pubmed_lineage import Author, Paper
+from skku_pubmed_lineage import Author, Paper, is_skku_author, skku_author_match_status
 
 
 @dataclass
@@ -57,18 +57,24 @@ def load_seed_papers(path: Path) -> list[Paper]:
 
     papers: list[Paper] = []
     for row in raw:
-        authors = [
-            Author(
-                name=str(a.get("name", "")),
-                last_name=str(a.get("last_name", "")),
-                fore_name=str(a.get("fore_name", "")),
-                initials=str(a.get("initials", "")),
-                orcid=str(a.get("orcid", "")).replace("https://orcid.org/", ""),
-                affiliations=list(a.get("affiliations", []) or []),
-                is_skku=bool(a.get("is_skku")),
+        authors = []
+        for a in row.get("authors", []):
+            name = str(a.get("name", ""))
+            initials = str(a.get("initials", ""))
+            affiliations = list(a.get("affiliations", []) or [])
+            authors.append(
+                Author(
+                    name=name,
+                    last_name=str(a.get("last_name", "")),
+                    fore_name=str(a.get("fore_name", "")),
+                    initials=initials,
+                    orcid=str(a.get("orcid", "")).replace("https://orcid.org/", ""),
+                    affiliations=affiliations,
+                    # Recompute from raw affiliation text. Do not trust the legacy
+                    # is_skku boolean embedded in papers.json.
+                    is_skku=is_skku_author(name, initials, affiliations),
+                )
             )
-            for a in row.get("authors", [])
-        ]
         papers.append(
             Paper(
                 pmid=str(row.get("pmid", "")),
@@ -80,9 +86,14 @@ def load_seed_papers(path: Path) -> list[Paper]:
                 pmcid=str(row.get("pmcid", "")),
                 pubmed_url=str(row.get("pubmed_url", "")),
                 authors=authors,
-                skku_authors=list(row.get("skku_authors", []) or []),
-                skku_orcids=list(row.get("skku_orcids", []) or []),
-                skku_affiliation_evidence=list(row.get("skku_affiliation_evidence", []) or []),
+                skku_authors=[a.name for a in authors if a.is_skku],
+                skku_orcids=sorted({a.orcid for a in authors if a.is_skku and a.orcid}),
+                skku_affiliation_evidence=[
+                    f"{a.name}: {aff}"
+                    for a in authors if a.is_skku
+                    for aff in a.affiliations
+                    if "sungkyunkwan" in aff.lower() or re.search(r"\\bskku\\b", aff, re.I)
+                ],
                 abstract=str(row.get("abstract", "")),
                 mesh_terms=list(row.get("mesh_terms", []) or []),
                 keywords=list(row.get("keywords", []) or []),
@@ -263,7 +274,24 @@ def build_seed_profiles(
 
     profiles.sort(key=lambda x: (-x.paper_count, x.name.lower()))
 
+    affiliation_status_counts = Counter(
+        skku_author_match_status(author.name, author.initials, author.affiliations)
+        for paper in papers
+        for author in paper.authors
+    )
+    ambiguous_papers = sum(
+        any(
+            skku_author_match_status(author.name, author.initials, author.affiliations)
+            == "ambiguous"
+            for author in paper.authors
+        )
+        for paper in papers
+    )
+    tracked_counts = [len(x["tracked_author_keys"]) for x in lineage_papers]
+
     summary = {
+        "profile_version": 2,
+        "author_affiliation_policy": "conservative_shared_block_initial_attribution",
         "seed_papers": len(papers),
         "researchers": len(profiles),
         "orcid_researchers": sum(bool(x.orcid) for x in profiles),
@@ -274,6 +302,10 @@ def build_seed_profiles(
         "papers_with_multiple_skku_researchers": sum(
             len(x["tracked_author_keys"]) >= 2 for x in lineage_papers
         ),
+        "papers_without_attributed_skku_researcher": sum(x == 0 for x in tracked_counts),
+        "max_tracked_researchers_per_paper": max(tracked_counts, default=0),
+        "ambiguous_shared_affiliation_papers": ambiguous_papers,
+        "affiliation_status_counts": dict(affiliation_status_counts),
     }
     return profiles, lineage_papers, summary
 
