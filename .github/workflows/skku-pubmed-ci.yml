@@ -19,6 +19,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: skku-pubmed-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   unit:
     name: Unit / Python ${{ matrix.python-version }}
@@ -252,6 +256,11 @@ jobs:
           assert len(annotations) == len(papers), (len(annotations), len(papers))
           assert all(a["research_stage"] for a in annotations), annotations
           assert all(a["research_question"] for a in annotations), annotations
+
+          n = max(1, summary["annotated_papers"])
+          assert summary["papers_with_disease_terms"] / n >= 0.80, summary
+          assert summary["papers_with_methods"] / n >= 0.60, summary
+          assert summary["papers_with_data_types"] / n >= 0.60, summary
           assert (root / "paper_annotations.csv").exists()
           assert (root / "paper_annotations.json").exists()
           assert (root / "lineage_edges.csv").exists()
