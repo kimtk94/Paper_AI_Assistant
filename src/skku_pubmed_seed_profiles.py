@@ -377,6 +377,13 @@ def build_seed_profiles(
         for paper in papers
     )
     tracked_counts = [len(x["tracked_author_keys"]) for x in lineage_papers]
+    summary_name_orcids: dict[str, set[str]] = defaultdict(set)
+    for paper in papers:
+        for author in paper.authors:
+            if author.is_skku and author.orcid:
+                name_key = norm_name(author.name)
+                if name_key:
+                    summary_name_orcids[name_key].add(author.orcid)
 
     summary = {
         "profile_version": 3,
@@ -393,20 +400,7 @@ def build_seed_profiles(
             for x in profiles
         ),
         "ambiguous_names_with_multiple_orcids": sum(
-            len(orcids) >= 2
-            for orcids in (
-                {
-                    norm_name(author.name): {
-                        a.orcid
-                        for paper in papers
-                        for a in paper.authors
-                        if a.is_skku and norm_name(a.name) == norm_name(author.name) and a.orcid
-                    }
-                    for paper in papers
-                    for author in paper.authors
-                    if author.is_skku and norm_name(author.name)
-                }
-            ).values()
+            len(orcids) >= 2 for orcids in summary_name_orcids.values()
         ),
         "papers_with_multiple_skku_researchers": sum(
             len(x["tracked_author_keys"]) >= 2 for x in lineage_papers
