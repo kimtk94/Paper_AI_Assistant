@@ -176,5 +176,113 @@ class TestAuthorContinuation(unittest.TestCase):
         self.assertEqual(author.name, "Tae Hoon Kim")
 
 
+
+class TestResearchLineageClassification(unittest.TestCase):
+    def setUp(self):
+        self.key = "orcid:0000-0001-2345-6789"
+        self.registry = {
+            self.key: followup.TrackedAuthor(
+                key=self.key,
+                name="Tae Hoon Kim",
+                orcid="0000-0001-2345-6789",
+                confidence="high",
+                seed_pmids=["100"],
+            )
+        }
+        self.paper_authors = {
+            "100": {self.key},
+            "200": {self.key},
+            "300": {self.key},
+        }
+
+    def test_direct_citation_between_consecutive_papers_is_strongest(self):
+        edges = [
+            followup.ContinuationEdge(
+                source="100",
+                target="200",
+                relation="author_continuation",
+                tracked_author="Tae Hoon Kim",
+                author_key=self.key,
+                confidence="high",
+                evidence="ORCID 0000-0001-2345-6789",
+            ),
+            followup.ContinuationEdge(
+                source="100",
+                target="200",
+                relation="citation",
+                tracked_author="",
+                author_key="citation",
+                confidence="high",
+                evidence="200 cites 100",
+            ),
+        ]
+        lineage_edges = followup.build_research_lineage_edges(
+            edges, self.paper_authors, self.registry
+        )
+        self.assertEqual(len(lineage_edges), 1)
+        self.assertEqual(lineage_edges[0].relation, "direct_citation_continuation")
+        self.assertEqual(lineage_edges[0].score, 1.0)
+
+    def test_orcid_only_continuation_is_distinguished_from_citation(self):
+        edges = [
+            followup.ContinuationEdge(
+                source="100",
+                target="200",
+                relation="author_continuation",
+                tracked_author="Tae Hoon Kim",
+                author_key=self.key,
+                confidence="high",
+                evidence="ORCID 0000-0001-2345-6789",
+            )
+        ]
+        lineage_edges = followup.build_research_lineage_edges(
+            edges, self.paper_authors, self.registry
+        )
+        self.assertEqual(lineage_edges[0].relation, "author_continuation_only")
+        self.assertEqual(lineage_edges[0].score, 0.75)
+
+    def test_nonconsecutive_self_citation_is_preserved(self):
+        edges = [
+            followup.ContinuationEdge(
+                source="100",
+                target="200",
+                relation="author_continuation",
+                tracked_author="Tae Hoon Kim",
+                author_key=self.key,
+                confidence="high",
+                evidence="ORCID 0000-0001-2345-6789",
+            ),
+            followup.ContinuationEdge(
+                source="200",
+                target="300",
+                relation="author_continuation",
+                tracked_author="Tae Hoon Kim",
+                author_key=self.key,
+                confidence="high",
+                evidence="ORCID 0000-0001-2345-6789",
+            ),
+            followup.ContinuationEdge(
+                source="100",
+                target="300",
+                relation="citation",
+                tracked_author="",
+                author_key="citation",
+                confidence="high",
+                evidence="300 cites 100",
+            ),
+        ]
+        lineage_edges = followup.build_research_lineage_edges(
+            edges, self.paper_authors, self.registry
+        )
+        relations = {e.relation for e in lineage_edges}
+        self.assertIn("direct_citation_same_author", relations)
+        direct = next(
+            e for e in lineage_edges
+            if e.relation == "direct_citation_same_author"
+        )
+        self.assertEqual(direct.score, 0.95)
+        self.assertEqual(direct.tracked_authors, ["Tae Hoon Kim"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
