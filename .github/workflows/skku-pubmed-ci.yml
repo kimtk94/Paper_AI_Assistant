@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   unit:
-    name: Unit / Python \${{ matrix.python-version }}
+    name: Unit / Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -34,7 +34,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: \${{ matrix.python-version }}
+          python-version: ${{ matrix.python-version }}
 
       - name: Compile scripts
         run: |
@@ -83,7 +83,7 @@ jobs:
           set -euo pipefail
           ok=0
           for attempt in 1 2 3; do
-            echo "PubMed smoke attempt \${attempt}/3"
+            echo "PubMed smoke attempt $attempt/3"
             if python src/skku_pubmed_lineage.py \
               --start-year 2025 \
               --end-year 2026 \
