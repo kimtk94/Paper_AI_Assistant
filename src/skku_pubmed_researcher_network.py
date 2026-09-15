@@ -43,6 +43,8 @@ class ResearcherEdge:
     relation: str
     score: float
     shared_papers: int
+    collaboration_weight: float
+    max_team_size: int
     direct_citations: int
     topic_similarity: float
     shared_diseases: list[str]
@@ -111,12 +113,22 @@ def build_researcher_network(
     lineage_edges: list[dict],
     topic_threshold: float = 0.30,
     include_thematic: bool = True,
+    max_clique_authors: int = 50,
+    team_full_weight_max: int = 8,
 ) -> tuple[list[ResearcherNode], list[ResearcherEdge]]:
+    """Project paper collaboration into a researcher graph without consortium cliques.
+
+    Papers with more than max_clique_authors tracked researchers are excluded from
+    pairwise projection. For smaller teams, each paper contributes a down-weighted
+    collaboration strength once the team exceeds team_full_weight_max.
+    """
     nodes = build_nodes(researchers)
     by_key = {x.key: x for x in nodes}
     name_to_key = {x.name: x.key for x in nodes}
 
-    collaboration: dict[tuple[str, str], set[str]] = {}
+    collaboration: dict[tuple[str, str], dict[str, float]] = {}
+    collaboration_team_size: dict[tuple[str, str], dict[str, int]] = {}
+
     for paper in papers:
         keys = sorted(
             {
@@ -126,15 +138,36 @@ def build_researcher_network(
             }
         )
         pmid = str(paper.get("pmid", ""))
+        team_size = len(keys)
+        if team_size < 2:
+            continue
+        if max_clique_authors and team_size > max_clique_authors:
+            continue
+
+        paper_weight = min(
+            1.0,
+            float(team_full_weight_max) / max(1, team_size - 1),
+        )
         for left, right in combinations(keys, 2):
-            collaboration.setdefault((left, right), set()).add(pmid)
+            pair = (left, right)
+            collaboration.setdefault(pair, {})[pmid] = max(
+                paper_weight,
+                collaboration.get(pair, {}).get(pmid, 0.0),
+            )
+            collaboration_team_size.setdefault(pair, {})[pmid] = team_size
 
     citation_counts: dict[tuple[str, str], int] = {}
     citation_examples: dict[tuple[str, str], list[str]] = {}
     for edge in lineage_edges:
         if edge.get("relation") != "cross_researcher_citation":
             continue
-        names = sorted({str(x) for x in (edge.get("tracked_authors", []) or []) if str(x) in name_to_key})
+        names = sorted(
+            {
+                str(x)
+                for x in (edge.get("tracked_authors", []) or [])
+                if str(x) in name_to_key
+            }
+        )
         keys = sorted({name_to_key[name] for name in names})
         for left, right in combinations(keys, 2):
             pair = (left, right)
@@ -158,7 +191,13 @@ def build_researcher_network(
     for left, right in candidate_pairs:
         a, b = by_key[left], by_key[right]
         pair = (left, right)
-        shared_pmids = sorted(x for x in collaboration.get(pair, set()) if x)
+        paper_weights = collaboration.get(pair, {})
+        shared_pmids = sorted(x for x in paper_weights if x)
+        collaboration_weight = round(sum(paper_weights.values()), 4)
+        max_team_size = max(
+            collaboration_team_size.get(pair, {}).values(),
+            default=0,
+        )
         citations = citation_counts.get(pair, 0)
         similarity, shared_disease, shared_methods, shared_data = profile_similarity(a, b)
 
@@ -175,7 +214,12 @@ def build_researcher_network(
             score = min(1.0, 0.85 + 0.10 * similarity)
         elif shared_pmids:
             relation = "collaboration"
-            score = min(0.94, 0.75 + 0.15 * similarity + 0.02 * min(len(shared_pmids), 5))
+            score = min(
+                0.94,
+                0.73
+                + 0.15 * similarity
+                + 0.04 * min(collaboration_weight, 3.0),
+            )
         else:
             relation = "thematic_overlap"
             score = min(0.84, 0.45 + 0.45 * similarity)
@@ -184,6 +228,10 @@ def build_researcher_network(
         if shared_pmids:
             evidence_parts.append(
                 f"shared papers={len(shared_pmids)} ({', '.join(shared_pmids[:5])})"
+            )
+            evidence_parts.append(
+                f"collaboration weight={collaboration_weight:.3f}; "
+                f"max team size={max_team_size}"
             )
         if citations:
             examples = citation_examples.get(pair, [])
@@ -208,6 +256,8 @@ def build_researcher_network(
                 relation=relation,
                 score=round(score, 4),
                 shared_papers=len(shared_pmids),
+                collaboration_weight=collaboration_weight,
+                max_team_size=max_team_size,
                 direct_citations=citations,
                 topic_similarity=similarity,
                 shared_diseases=shared_disease,
@@ -217,7 +267,16 @@ def build_researcher_network(
             )
         )
 
-    edges.sort(key=lambda e: (-e.score, -e.direct_citations, -e.shared_papers, e.source_name, e.target_name))
+    edges.sort(
+        key=lambda e: (
+            -e.score,
+            -e.direct_citations,
+            -e.collaboration_weight,
+            -e.shared_papers,
+            e.source_name,
+            e.target_name,
+        )
+    )
     return nodes, edges
 
 
@@ -346,6 +405,18 @@ def main() -> int:
         action="store_true",
         help="Only evaluate observed collaboration/citation pairs; avoids O(R^2) thematic comparisons.",
     )
+    parser.add_argument(
+        "--max-clique-authors",
+        type=int,
+        default=50,
+        help="Skip pairwise clique projection for papers above this tracked-author count.",
+    )
+    parser.add_argument(
+        "--team-full-weight-max",
+        type=int,
+        default=8,
+        help="Teams up to this size contribute full collaboration weight.",
+    )
     parser.add_argument("--output-dir", default="")
     args = parser.parse_args()
 
@@ -363,6 +434,8 @@ def main() -> int:
         lineage_edges,
         topic_threshold=args.topic_threshold,
         include_thematic=not args.skip_thematic,
+        max_clique_authors=args.max_clique_authors,
+        team_full_weight_max=args.team_full_weight_max,
     )
 
     node_json = [asdict(x) for x in nodes]
@@ -391,7 +464,17 @@ def main() -> int:
     write_csv(output_dir / "researcher_network_edges.csv", edge_rows)
     render_html(output_dir / "researcher_network.html", nodes, edges)
 
+    valid_keys = {node.key for node in nodes}
+    tracked_team_sizes = [
+        len({
+            str(x)
+            for x in (paper.get("tracked_author_keys", []) or [])
+            if str(x) in valid_keys
+        })
+        for paper in papers
+    ]
     summary = {
+        "network_version": 2,
         "researchers": len(nodes),
         "network_edges": len(edges),
         "collaboration_citation": sum(e.relation == "collaboration+citation" for e in edges),
@@ -400,6 +483,12 @@ def main() -> int:
         "thematic_overlap": sum(e.relation == "thematic_overlap" for e in edges),
         "high_confidence_edges": sum(e.score >= 0.85 for e in edges),
         "thematic_enabled": not args.skip_thematic,
+        "max_clique_authors": args.max_clique_authors,
+        "team_full_weight_max": args.team_full_weight_max,
+        "suppressed_consortium_papers": sum(
+            size > args.max_clique_authors for size in tracked_team_sizes
+        ) if args.max_clique_authors else 0,
+        "max_tracked_team_size": max(tracked_team_sizes, default=0),
     }
     (output_dir / "researcher_network_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
