@@ -11,6 +11,7 @@ Outputs:
   author_registry.csv
   lineage_papers.csv / lineage_papers.json
   continuation_edges.csv / continuation_edges.json
+  lineage_edges.csv / lineage_edges.json
   continuation.md
 """
 
@@ -60,6 +61,17 @@ class ContinuationEdge:
     relation: str
     tracked_author: str
     author_key: str
+    confidence: str
+    evidence: str
+
+
+@dataclass
+class ResearchLineageEdge:
+    source: str
+    target: str
+    relation: str
+    score: float
+    tracked_authors: list[str]
     confidence: str
     evidence: str
 
@@ -303,6 +315,123 @@ def add_direct_citation_edges(
     return edges
 
 
+def build_research_lineage_edges(
+    edges: list[ContinuationEdge],
+    paper_authors: dict[str, set[str]],
+    registry_map: dict[str, TrackedAuthor],
+) -> list[ResearchLineageEdge]:
+    """Collapse raw author/citation edges into interpretable research-lineage edges.
+
+    Priority:
+    1) same tracked researcher + direct citation + chronological continuation
+    2) same tracked researcher + direct citation (non-consecutive publication)
+    3) citation between different tracked researchers
+    4) same tracked researcher only, without direct citation evidence
+    """
+    citation_pairs = {
+        (e.source, e.target)
+        for e in edges
+        if e.relation == "citation"
+    }
+    output: dict[tuple[str, str, str, str], ResearchLineageEdge] = {}
+
+    # Chronological publication-to-publication continuation for each tracked author.
+    for edge in edges:
+        if edge.relation != "author_continuation":
+            continue
+
+        has_direct_citation = (edge.source, edge.target) in citation_pairs
+        if has_direct_citation:
+            relation = "direct_citation_continuation"
+            score = 1.0
+            evidence = f"{edge.evidence}; {edge.target} directly cites {edge.source}"
+        else:
+            relation = "author_continuation_only"
+            score = 0.75 if edge.confidence == "high" else 0.45
+            evidence = f"{edge.evidence}; no direct PubMed citation detected between consecutive papers"
+
+        item = ResearchLineageEdge(
+            source=edge.source,
+            target=edge.target,
+            relation=relation,
+            score=score,
+            tracked_authors=[edge.tracked_author] if edge.tracked_author else [],
+            confidence=edge.confidence,
+            evidence=evidence,
+        )
+        output[(item.source, item.target, item.relation, edge.author_key)] = item
+
+    # Citation links that connect non-consecutive papers or different researchers.
+    continuation_pairs = {
+        (e.source, e.target)
+        for e in edges
+        if e.relation == "author_continuation"
+    }
+    for edge in edges:
+        if edge.relation != "citation":
+            continue
+        if (edge.source, edge.target) in continuation_pairs:
+            continue
+
+        shared_keys = (
+            paper_authors.get(edge.source, set())
+            & paper_authors.get(edge.target, set())
+        )
+        if shared_keys:
+            names = sorted({registry_map[k].name for k in shared_keys if k in registry_map})
+            confidence = (
+                "high"
+                if shared_keys
+                and all(registry_map[k].confidence == "high" for k in shared_keys if k in registry_map)
+                else "mixed"
+            )
+            relation = "direct_citation_same_author"
+            score = 0.95
+            evidence = (
+                f"{edge.target} directly cites {edge.source}; "
+                f"same tracked researcher(s): {', '.join(names)}"
+            )
+        else:
+            source_names = sorted(
+                {
+                    registry_map[k].name
+                    for k in paper_authors.get(edge.source, set())
+                    if k in registry_map
+                }
+            )
+            target_names = sorted(
+                {
+                    registry_map[k].name
+                    for k in paper_authors.get(edge.target, set())
+                    if k in registry_map
+                }
+            )
+            names = sorted(set(source_names + target_names))
+            confidence = "high"
+            relation = "cross_researcher_citation"
+            score = 0.85
+            evidence = (
+                f"{edge.target} directly cites {edge.source}; "
+                f"tracked researchers: {', '.join(names) or 'none'}"
+            )
+
+        item = ResearchLineageEdge(
+            source=edge.source,
+            target=edge.target,
+            relation=relation,
+            score=score,
+            tracked_authors=names,
+            confidence=confidence,
+            evidence=evidence,
+        )
+        output[(item.source, item.target, item.relation, "|".join(names))] = item
+
+    return sorted(
+        output.values(),
+        key=lambda e: (-e.score, e.source, e.target, e.relation),
+    )
+
+
 def write_csv(path: Path, rows: list[dict]) -> None:
     if not rows:
         path.write_text("", encoding="utf-8")
@@ -318,6 +447,7 @@ def write_report(
     registry: list[TrackedAuthor],
     followed: list[FollowedPaper],
     edges: list[ContinuationEdge],
+    lineage_edges: list[ResearchLineageEdge],
 ) -> None:
     author_counts = Counter()
     by_key: dict[str, list[FollowedPaper]] = defaultdict(list)
@@ -327,6 +457,7 @@ def write_report(
             by_key[key].append(paper)
 
     rel_counts = Counter(e.relation for e in edges)
+    lineage_counts = Counter(e.relation for e in lineage_edges)
     lines = [
         "# SKKU-seeded PubMed Author Continuation",
         "",
@@ -335,6 +466,17 @@ def write_report(
         f"- Unique followed publications: {len(followed)}",
         f"- Author-continuation edges: {rel_counts['author_continuation']}",
         f"- Direct citation edges: {rel_counts['citation']}",
+        f"- Strong direct-citation continuations: {lineage_counts['direct_citation_continuation']}",
+        f"- Direct citations within same researcher: {lineage_counts['direct_citation_same_author']}",
+        f"- Author-only continuations: {lineage_counts['author_continuation_only']}",
+        "",
+        "## Lineage interpretation",
+        "",
+        "- Score 1.00: same tracked researcher and the later consecutive paper directly cites the earlier paper.",
+        "- Score 0.95: same tracked researcher with a direct citation, but the papers are not consecutive in the publication timeline.",
+        "- Score 0.85: direct citation between papers belonging to different tracked researchers.",
+        "- Score 0.75: exact ORCID researcher continuation without a direct citation between consecutive papers.",
+        "- Score 0.45: name-only researcher continuation without direct citation evidence.",
         "",
         "## Identity policy",
         "",
@@ -430,6 +572,12 @@ def main() -> int:
             args.max_citation_checks,
         )
 
+    lineage_edges = build_research_lineage_edges(
+        edges,
+        paper_authors,
+        registry_map,
+    )
+
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -450,6 +598,13 @@ def main() -> int:
     write_csv(out / "lineage_papers.csv", followed_rows)
     write_csv(out / "continuation_edges.csv", [asdict(e) for e in edges])
 
+    lineage_rows = []
+    for item in lineage_edges:
+        row = asdict(item)
+        row["tracked_authors"] = "; ".join(item.tracked_authors)
+        lineage_rows.append(row)
+    write_csv(out / "lineage_edges.csv", lineage_rows)
+
     (out / "lineage_papers.json").write_text(
         json.dumps([asdict(x) for x in followed], ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -458,7 +613,11 @@ def main() -> int:
         json.dumps([asdict(x) for x in edges], ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    write_report(out / "continuation.md", registry, followed, edges)
+    (out / "lineage_edges.json").write_text(
+        json.dumps([asdict(x) for x in lineage_edges], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    write_report(out / "continuation.md", registry, followed, edges, lineage_edges)
 
     summary = {
         "tracked_researchers": len(registry),
@@ -467,6 +626,12 @@ def main() -> int:
         "unique_followed_papers": len(followed),
         "edges": len(edges),
         "edge_types": dict(Counter(e.relation for e in edges)),
+        "lineage_edges": len(lineage_edges),
+        "lineage_types": dict(Counter(e.relation for e in lineage_edges)),
+        "strong_direct_lineage": sum(
+            e.relation in {"direct_citation_continuation", "direct_citation_same_author"}
+            for e in lineage_edges
+        ),
     }
     (out / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2),
