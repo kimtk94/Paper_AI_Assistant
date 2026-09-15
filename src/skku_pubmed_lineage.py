@@ -245,6 +245,22 @@ def parse_paper(article: ET.Element) -> Paper:
             if SKKU_RE.search(affiliation):
                 evidence.append(f"{author.name}: {affiliation}")
 
+    # Keep paper-level SKKU evidence even when a consortium-style affiliation
+    # cannot be safely attributed to a specific author. This separates
+    # "SKKU paper" inclusion from "SKKU researcher" identity assignment.
+    if not evidence:
+        unattributed = []
+        seen_affiliations = set()
+        for author in authors:
+            for affiliation in author.affiliations:
+                if SKKU_RE.search(affiliation) and affiliation not in seen_affiliations:
+                    seen_affiliations.add(affiliation)
+                    unattributed.append(affiliation)
+        evidence.extend(
+            f"Unattributed SKKU affiliation: {affiliation}"
+            for affiliation in unattributed
+        )
+
     mesh = [
         clean_text(x)
         for x in citation.findall("./MeshHeadingList/MeshHeading/DescriptorName")
@@ -1290,6 +1306,8 @@ def main() -> int:
     write_html(out / "lineage.html", papers, edges)
 
     summary = {
+        "graph_version": 2,
+        "author_affiliation_policy": "paper_inclusion_separate_from_conservative_author_attribution",
         "query": query,
         "pubmed_total_hits": total_hits,
         "retrieval_mode": retrieval_mode,
