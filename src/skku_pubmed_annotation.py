@@ -66,6 +66,14 @@ METHOD_PATTERNS: dict[str, tuple[str, ...]] = {
     "machine learning": ("machine learning", "deep learning", "artificial intelligence", "neural network"),
     "survival analysis": ("survival analysis", "cox regression", "cox proportional"),
     "causal inference": ("causal inference", "instrumental variable", "target trial"),
+    "registry/inception cohort": ("registry-based", "registry based", "registry", "inception cohort"),
+    "multicenter cohort": ("multicenter", "multi-center", "cohort study"),
+    "correlation analysis": ("correlation", "correlated with", "association between"),
+    "pharmacokinetics/TDM": ("pharmacokinetic", "trough level", "trough target", "drug concentration", "therapeutic drug monitoring"),
+    "comparative effectiveness": ("comparison of", "compared with", "versus", "monotherapy", "combination therapy"),
+    "endoscopic assessment": ("endoscopic", "colonoscopy", "ses-cd", "mayo score"),
+    "biomarker analysis": ("biomarker", "serum level", "plasma level", "calprotectin", "cytokine"),
+    "treatment outcome analysis": ("remission", "healing", "treatment response", "efficacy", "effective for the treatment"),
 }
 
 DATA_PATTERNS: dict[str, tuple[str, ...]] = {
@@ -80,6 +88,12 @@ DATA_PATTERNS: dict[str, tuple[str, ...]] = {
     "clinical/EHR": ("electronic health", "ehr", "clinical data", "medical record", "patient record"),
     "imaging": ("mri", "magnetic resonance", "computed tomography", "radiomics", "imaging"),
     "questionnaire/phenotype": ("questionnaire", "survey", "phenotype", "phenotypic"),
+    "clinical registry/cohort": ("registry", "registry-based", "registry based", "cohort", "multicenter", "multi-center"),
+    "laboratory biomarker": ("serum", "plasma", "biomarker", "calprotectin", "cytokine", "tnf-", "c-reactive protein", "crp"),
+    "endoscopy": ("endoscopic", "colonoscopy", "ses-cd", "mayo score"),
+    "pharmacokinetic/TDM": ("pharmacokinetic", "trough level", "trough target", "drug concentration", "therapeutic drug monitoring"),
+    "treatment/outcomes": ("treatment", "therapy", "remission", "healing", "response", "efficacy", "effective"),
+    "anthropometric/growth": ("growth", "height", "weight", "body mass index", "bmi"),
 }
 
 STAGE_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
@@ -88,7 +102,9 @@ STAGE_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ("causal inference", ("mendelian random", "causal", "instrumental variable")),
     ("validation", ("validation", "replication", "validate", "external cohort")),
     ("mechanism", ("mechanism", "pathway", "functional", "cellular", "molecular mechanism")),
-    ("discovery/association", ("association", "identify", "discover", "characterize", "profiling", "landscape")),
+    ("comparative effectiveness", ("comparison of", "compared with", "versus", "monotherapy", "combination therapy")),
+    ("pharmacokinetics", ("pharmacokinetic", "trough level", "trough target", "therapeutic drug monitoring")),
+    ("discovery/association", ("association", "associated with", "identify", "discover", "characterize", "profiling", "landscape", "correlation")),
 ]
 
 GENERIC_MESH = {
@@ -195,6 +211,16 @@ def annotate_paper(paper: Paper) -> PaperAnnotation:
     disease_terms, disease_evidence = infer_disease_terms(paper, text)
     methods, method_evidence = _match_labels(text, METHOD_PATTERNS)
     data_types, data_evidence = _match_labels(text, DATA_PATTERNS)
+
+    method_set = set(methods)
+    if "single-cell RNA-seq" in method_set and "bulk RNA-seq" in method_set:
+        methods.remove("bulk RNA-seq")
+    if "GWAS" in method_set and "genetic association" in method_set:
+        methods.remove("genetic association")
+    if "registry/inception cohort" in method_set and "multicenter cohort" in method_set:
+        if "multicenter" not in text and "multi-center" not in text:
+            methods.remove("multicenter cohort")
+
     stage = infer_stage(text, methods)
     question = make_research_question(disease_terms, methods, data_types, stage)
 
