@@ -9,9 +9,10 @@ keywords, and publication types already returned by PubMed.
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Iterable
 
+from skku_pubmed_domain import classify_domain, is_non_biomedical_domain
 from skku_pubmed_lineage import Paper
 
 
@@ -24,6 +25,9 @@ class PaperAnnotation:
     research_stage: str
     research_question: str
     evidence_terms: list[str]
+    primary_domain: str = ""
+    research_domains: list[str] = field(default_factory=list)
+    topic_terms: list[str] = field(default_factory=list)
 
 
 DISEASE_PATTERNS: dict[str, tuple[str, ...]] = {
@@ -97,6 +101,37 @@ DATA_PATTERNS: dict[str, tuple[str, ...]] = {
     "treatment/outcomes": ("treatment", "therapy", "remission", "healing", "response", "efficacy", "effective"),
     "anthropometric/growth": ("growth", "height", "weight", "body mass index", "bmi"),
 }
+
+ENGINEERING_METHOD_PATTERNS: dict[str, tuple[str, ...]] = {
+    "materials synthesis": ("synthesis", "fabricat", "deposition", "solution process", "spin-coat"),
+    "device fabrication": ("device fabrication", "fabricated device", "device architecture", "electrode"),
+    "structural characterization": ("x-ray diffraction", "xrd", "crystal structure", "structural characterization"),
+    "spectroscopy": ("spectroscopy", "raman", "photoluminescence", "absorption spectrum", "nmr"),
+    "microscopy": ("microscopy", "sem", "tem", "atomic force microscopy", "afm"),
+    "electrical characterization": ("current-voltage", "i-v", "conductivity", "resistiv", "mobility"),
+    "electrochemical characterization": ("electrochemical", "cyclic voltammetry", "impedance spectroscopy"),
+    "computational modeling/DFT": ("density functional theory", "dft", "first-principles", "molecular dynamics"),
+    "photovoltaic characterization": ("power conversion efficiency", "open-circuit voltage", "short-circuit current", "fill factor"),
+    "catalysis": ("catalyst", "catalysis", "electrocatal", "photocatal"),
+}
+
+ENGINEERING_DATA_PATTERNS: dict[str, tuple[str, ...]] = {
+    "materials composition/structure": ("crystal structure", "x-ray diffraction", "xrd", "composition", "phase"),
+    "spectroscopy": ("spectroscopy", "raman", "photoluminescence", "absorption spectrum", "nmr"),
+    "microscopy": ("microscopy", "sem", "tem", "atomic force microscopy", "afm"),
+    "electrical/device": ("current-voltage", "conductivity", "mobility", "device performance", "memristor"),
+    "electrochemical": ("electrochemical", "cyclic voltammetry", "impedance"),
+    "computational/materials": ("density functional theory", "dft", "first-principles", "molecular dynamics"),
+    "photovoltaic/device": ("power conversion efficiency", "open-circuit voltage", "short-circuit current", "solar cell", "photovoltaic"),
+}
+
+ENGINEERING_STAGE_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
+    ("device/material development", ("fabricat", "synthesis", "developed", "device architecture")),
+    ("optimization", ("optim", "enhanc", "improv", "efficiency", "performance")),
+    ("materials characterization", ("characterization", "x-ray diffraction", "spectroscopy", "microscopy")),
+    ("mechanism", ("mechanism", "origin of", "charge transport", "reaction pathway")),
+    ("computational modeling", ("density functional theory", "dft", "first-principles", "molecular dynamics")),
+]
 
 STAGE_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ("intervention", ("randomized controlled", "randomised controlled", "clinical trial", "intervention")),
@@ -210,24 +245,45 @@ def make_research_question(
 
 def annotate_paper(paper: Paper) -> PaperAnnotation:
     text = _paper_text(paper)
-    disease_terms, disease_evidence = infer_disease_terms(paper, text)
-    methods, method_evidence = _match_labels(text, METHOD_PATTERNS)
-    data_types, data_evidence = _match_labels(text, DATA_PATTERNS)
+    domain = classify_domain(paper)
 
-    method_set = set(methods)
-    if "single-cell RNA-seq" in method_set and "bulk RNA-seq" in method_set:
-        methods.remove("bulk RNA-seq")
-    if "GWAS" in method_set and "genetic association" in method_set:
-        methods.remove("genetic association")
-    if "registry/inception cohort" in method_set and "multicenter cohort" in method_set:
-        if "multicenter" not in text and "multi-center" not in text:
-            methods.remove("multicenter cohort")
+    if is_non_biomedical_domain(domain.primary_domain):
+        # Do not force engineering/materials papers into disease and clinical
+        # method taxonomies merely because they contain words such as depression,
+        # response, growth, or association.
+        disease_terms: list[str] = []
+        disease_evidence: list[str] = []
+        methods, method_evidence = _match_labels(text, ENGINEERING_METHOD_PATTERNS)
+        data_types, data_evidence = _match_labels(text, ENGINEERING_DATA_PATTERNS)
 
-    stage = infer_stage(text, methods)
-    question = make_research_question(disease_terms, methods, data_types, stage)
+        stage = "descriptive/observational"
+        for candidate, needles in ENGINEERING_STAGE_PATTERNS:
+            if any(needle in text for needle in needles):
+                stage = candidate
+                break
+
+        topic = ", ".join(domain.topic_terms[:2]) if domain.topic_terms else domain.primary_domain
+        method = ", ".join(methods[:2]) if methods else "experimental characterization"
+        question = f"How are {topic} developed or characterized using {method}?"
+    else:
+        disease_terms, disease_evidence = infer_disease_terms(paper, text)
+        methods, method_evidence = _match_labels(text, METHOD_PATTERNS)
+        data_types, data_evidence = _match_labels(text, DATA_PATTERNS)
+
+        method_set = set(methods)
+        if "single-cell RNA-seq" in method_set and "bulk RNA-seq" in method_set:
+            methods.remove("bulk RNA-seq")
+        if "GWAS" in method_set and "genetic association" in method_set:
+            methods.remove("genetic association")
+        if "registry/inception cohort" in method_set and "multicenter cohort" in method_set:
+            if "multicenter" not in text and "multi-center" not in text:
+                methods.remove("multicenter cohort")
+
+        stage = infer_stage(text, methods)
+        question = make_research_question(disease_terms, methods, data_types, stage)
 
     evidence = []
-    for item in disease_evidence + method_evidence + data_evidence:
+    for item in domain.evidence_terms + disease_evidence + method_evidence + data_evidence:
         if item not in evidence:
             evidence.append(item)
 
@@ -239,11 +295,17 @@ def annotate_paper(paper: Paper) -> PaperAnnotation:
         research_stage=stage,
         research_question=question,
         evidence_terms=evidence[:20],
+        primary_domain=domain.primary_domain,
+        research_domains=domain.research_domains,
+        topic_terms=domain.topic_terms,
     )
 
 
 def progression_summary(source: PaperAnnotation, target: PaperAnnotation) -> str:
     changes = []
+
+    if source.primary_domain and target.primary_domain and source.primary_domain != target.primary_domain:
+        changes.append(f"domain: {source.primary_domain} → {target.primary_domain}")
 
     if source.research_stage != target.research_stage:
         changes.append(f"stage: {source.research_stage} → {target.research_stage}")
