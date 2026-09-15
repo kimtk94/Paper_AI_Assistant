@@ -964,6 +964,51 @@ class TestResearchCommunities(unittest.TestCase):
         )
         self.assertEqual(len(cross1), 1)
 
+    def test_engineering_domain_drives_community_label(self):
+        nodes = [
+            {
+                "key": "m1", "name": "Materials A", "orcid": "m1",
+                "paper_count": 8, "first_year": 2020, "last_year": 2026,
+                "top_domains": ["Energy / Photovoltaics", "Materials Science"],
+                "top_topics": ["perovskite solar cells", "photovoltaics"],
+                "top_diseases": ["psychiatric disease"],
+                "top_methods": ["photovoltaic characterization"],
+                "top_data_types": ["photovoltaic/device"],
+                "stage_path": ["device/material development"],
+                "strong_lineage_count": 0,
+            },
+            {
+                "key": "m2", "name": "Materials B", "orcid": "m2",
+                "paper_count": 6, "first_year": 2021, "last_year": 2026,
+                "top_domains": ["Energy / Photovoltaics"],
+                "top_topics": ["perovskite solar cells"],
+                "top_diseases": [],
+                "top_methods": ["materials synthesis"],
+                "top_data_types": ["materials composition/structure"],
+                "stage_path": ["materials characterization"],
+                "strong_lineage_count": 0,
+            },
+        ]
+        edges = [{
+            "source": "m1", "target": "m2", "relation": "collaboration",
+            "score": 0.93, "shared_papers": 4, "direct_citations": 0,
+            "topic_similarity": 0.8, "shared_domains": ["Energy / Photovoltaics"],
+            "shared_topics": ["perovskite solar cells"], "shared_diseases": [],
+            "shared_methods": [], "shared_data_types": [], "evidence": "",
+        }]
+
+        communities, _, _ = research_communities.build_research_communities(
+            nodes, edges, min_edge_score=0.65
+        )
+        self.assertEqual(len(communities), 1)
+        self.assertTrue(
+            communities[0].label.startswith(
+                "Energy / Photovoltaics / perovskite solar cells"
+            ),
+            communities[0].label,
+        )
+        self.assertNotIn("psychiatric disease", communities[0].label)
+
     def test_live_style_two_researcher_cluster_has_hub_and_theme(self):
         nodes = [
             {
