@@ -46,7 +46,8 @@ jobs:
             src/skku_pubmed_lineage.py \
             src/skku_pubmed_annotation.py \
             src/skku_pubmed_author_followup.py \
-            src/skku_pubmed_researcher_network.py
+            src/skku_pubmed_researcher_network.py \
+            src/skku_pubmed_research_communities.py
 
       - name: Run deterministic unit tests
         run: python -m unittest discover -s tests -p "test_skku_pubmed.py" -v
@@ -440,6 +441,50 @@ jobs:
           }
           print("Live multi-researcher network:", summary)
           print("Collaboration edge:", collaboration_edges[0])
+          PY
+
+      - name: Live research community clustering
+        run: |
+          python src/skku_pubmed_research_communities.py \
+            --input-dir /tmp/skku_multi_followup \
+            --min-edge-score 0.65 \
+            --strong-edge-score 0.85
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("/tmp/skku_multi_followup")
+          summary = json.loads(
+              (root / "research_community_summary.json").read_text(encoding="utf-8")
+          )
+          communities = json.loads(
+              (root / "research_communities.json").read_text(encoding="utf-8")
+          )
+          members = json.loads(
+              (root / "researcher_community_membership.json").read_text(encoding="utf-8")
+          )
+
+          assert summary["researchers"] == 2, summary
+          assert summary["communities"] == 1, summary
+          assert summary["multi_researcher_communities"] == 1, summary
+          assert summary["largest_community_size"] == 2, summary
+          assert len(communities) == 1, communities
+          assert communities[0]["researcher_count"] == 2, communities[0]
+          assert communities[0]["hub_researcher"], communities[0]
+          assert communities[0]["label"], communities[0]
+          assert sum(m["role"] == "hub" for m in members) == 1, members
+          assert (root / "research_communities.csv").exists()
+          assert (root / "researcher_community_membership.csv").exists()
+          assert (root / "community_edges.csv").exists()
+          assert (root / "research_community_map.html").exists()
+          html = (root / "research_community_map.html").read_text(encoding="utf-8")
+          assert "vis-network" in html
+          assert "not a confirmed PI/lab head" in html
+
+          print("Live research community:", summary)
+          print("Community:", communities[0])
+          print("Members:", members)
           PY
 
       - name: Upload smoke outputs
