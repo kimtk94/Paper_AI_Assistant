@@ -13,6 +13,7 @@ import skku_pubmed_lineage as lineage
 import skku_pubmed_author_followup as followup
 import skku_pubmed_researcher_network as researcher_network
 import skku_pubmed_research_communities as research_communities
+import skku_pubmed_seed_profiles as seed_profiles
 
 
 PUBMED_XML = """<PubmedArticle>
@@ -889,6 +890,77 @@ class TestPartitionedPubMedCrawl(unittest.TestCase):
         self.assertTrue(
             any("2026/12/01:2026/12/31[dp]" in query for query, _, _ in client.calls)
         )
+
+
+class TestSeedCorpusProfiles(unittest.TestCase):
+    def test_name_only_record_merges_into_unique_orcid_identity(self):
+        p1 = parsed_paper()
+        p1.pmid = "100"
+        p1.year = 2024
+        p1.authors[0].name = "Tae Hoon Kim"
+        p1.authors[0].orcid = "0000-0001-2345-6789"
+        p1.authors[0].is_skku = True
+        p1.skku_authors = ["Tae Hoon Kim"]
+        p1.skku_orcids = ["0000-0001-2345-6789"]
+
+        p2 = parsed_paper()
+        p2.pmid = "200"
+        p2.year = 2025
+        p2.authors[0].name = "Tae Hoon Kim"
+        p2.authors[0].orcid = ""
+        p2.authors[0].is_skku = True
+        p2.skku_authors = ["Tae Hoon Kim"]
+        p2.skku_orcids = []
+
+        profiles, papers, summary = seed_profiles.build_seed_profiles([p1, p2])
+
+        self.assertEqual(len(profiles), 1)
+        self.assertEqual(profiles[0].key, "orcid:0000-0001-2345-6789")
+        self.assertEqual(profiles[0].paper_count, 2)
+        self.assertEqual(profiles[0].confidence, "high")
+        self.assertEqual(summary["researchers"], 1)
+        self.assertEqual(
+            papers[0]["tracked_author_keys"][0],
+            "orcid:0000-0001-2345-6789",
+        )
+        self.assertEqual(
+            papers[1]["tracked_author_keys"][0],
+            "orcid:0000-0001-2345-6789",
+        )
+
+    def test_seed_profiles_feed_scalable_observed_edge_network(self):
+        p1 = parsed_paper()
+        p1.pmid = "300"
+        p1.year = 2025
+
+        second = lineage.Author(
+            name="Second Researcher",
+            last_name="Researcher",
+            fore_name="Second",
+            initials="S",
+            orcid="0000-0002-0000-0000",
+            affiliations=["Sungkyunkwan University"],
+            is_skku=True,
+        )
+        p1.authors.append(second)
+        p1.skku_authors = ["Tae Hoon Kim", "Second Researcher"]
+        p1.skku_orcids = ["0000-0001-2345-6789", "0000-0002-0000-0000"]
+
+        profiles, papers, _ = seed_profiles.build_seed_profiles([p1])
+        researcher_rows = [seed_profiles.asdict(x) for x in profiles]
+
+        nodes, edges = researcher_network.build_researcher_network(
+            researcher_rows,
+            papers,
+            [],
+            topic_threshold=0.30,
+            include_thematic=False,
+        )
+
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(len(edges), 1)
+        self.assertEqual(edges[0].relation, "collaboration")
+        self.assertEqual(edges[0].shared_papers, 1)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
