@@ -169,7 +169,14 @@ def build_registry(seed_records: list[dict], allow_name_fallback: bool) -> list[
             )
         )
 
-    return sorted(registry, key=lambda x: (x.confidence != "high", x.name.lower()))
+    return sorted(
+        registry,
+        key=lambda x: (
+            x.confidence != "high",
+            -len(x.seed_pmids),
+            x.name.lower(),
+        ),
+    )
 
 
 def author_query(author: TrackedAuthor, start_year: int, end_year: int) -> str:
@@ -880,7 +887,8 @@ def main() -> int:
     registry = registry[: args.max_authors]
     print(
         f"[registry] researchers={len(registry)} "
-        f"(ORCID-first; name fallback={args.allow_name_fallback})",
+        f"(ORCID-first; ranked by SKKU seed-paper count; "
+        f"name fallback={args.allow_name_fallback})",
         file=sys.stderr,
     )
 
@@ -1005,8 +1013,8 @@ def main() -> int:
     write_report(out / "continuation.md", registry, followed, edges, lineage_edges)
 
     summary = {
-        "followup_version": 2,
-        "registry_policy": "conservative_shared_block_initial_attribution",
+        "followup_version": 3,
+        "registry_policy": "conservative_affiliation_then_seed_paper_count_ranking",
         "start_year": args.start_year,
         "end_year": args.end_year,
         "max_authors": args.max_authors,
