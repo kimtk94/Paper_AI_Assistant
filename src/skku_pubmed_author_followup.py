@@ -13,6 +13,8 @@ Outputs:
   continuation_edges.csv / continuation_edges.json
   lineage_edges.csv / lineage_edges.json
   paper_annotations.csv / paper_annotations.json
+  researcher_summary.csv / researcher_summary.json
+  research_trajectory.html
   continuation.md
 """
 
@@ -84,6 +86,23 @@ class ResearchLineageEdge:
     source_stage: str = ""
     target_stage: str = ""
     progression: str = ""
+
+
+@dataclass
+class ResearcherTrajectory:
+    key: str
+    name: str
+    orcid: str
+    confidence: str
+    paper_count: int
+    first_year: int
+    last_year: int
+    top_diseases: list[str]
+    top_methods: list[str]
+    top_data_types: list[str]
+    stage_path: list[str]
+    strong_lineage_count: int
+    trajectory_summary: str
 
 
 def norm_name(value: str) -> str:
@@ -468,6 +487,264 @@ def build_research_lineage_edges(
     )
 
 
+
+def build_researcher_trajectories(
+    registry: list[TrackedAuthor],
+    followed: list[FollowedPaper],
+    lineage_edges: list[ResearchLineageEdge],
+) -> list[ResearcherTrajectory]:
+    by_key: dict[str, list[FollowedPaper]] = defaultdict(list)
+    for paper in followed:
+        for key in paper.tracked_author_keys:
+            by_key[key].append(paper)
+
+    trajectories: list[ResearcherTrajectory] = []
+    for tracked in registry:
+        papers = sorted(
+            by_key.get(tracked.key, []),
+            key=lambda p: (p.year or 9999, int(p.pmid) if p.pmid.isdigit() else 0),
+        )
+        if not papers:
+            continue
+
+        disease_counts = Counter(value for paper in papers for value in paper.disease_terms)
+        method_counts = Counter(value for paper in papers for value in paper.methods)
+        data_counts = Counter(value for paper in papers for value in paper.data_types)
+
+        stage_path: list[str] = []
+        for paper in papers:
+            if not stage_path or stage_path[-1] != paper.research_stage:
+                stage_path.append(paper.research_stage)
+
+        strong_count = sum(
+            edge.relation in {"direct_citation_continuation", "direct_citation_same_author"}
+            and tracked.name in edge.tracked_authors
+            for edge in lineage_edges
+        )
+
+        years = [p.year for p in papers if p.year]
+        first_year = min(years) if years else 0
+        last_year = max(years) if years else 0
+        top_diseases = [x for x, _ in disease_counts.most_common(5)]
+        top_methods = [x for x, _ in method_counts.most_common(5)]
+        top_data = [x for x, _ in data_counts.most_common(5)]
+
+        summary_parts = []
+        if first_year and last_year:
+            summary_parts.append(f"{first_year}–{last_year}")
+        if stage_path:
+            summary_parts.append("stage: " + " → ".join(stage_path))
+        if top_methods:
+            summary_parts.append("methods: " + ", ".join(top_methods[:3]))
+        if top_data:
+            summary_parts.append("data: " + ", ".join(top_data[:3]))
+        if top_diseases:
+            summary_parts.append("disease: " + ", ".join(top_diseases[:2]))
+        summary_parts.append(f"strong citation lineage: {strong_count}")
+
+        trajectories.append(
+            ResearcherTrajectory(
+                key=tracked.key,
+                name=tracked.name,
+                orcid=tracked.orcid,
+                confidence=tracked.confidence,
+                paper_count=len(papers),
+                first_year=first_year,
+                last_year=last_year,
+                top_diseases=top_diseases,
+                top_methods=top_methods,
+                top_data_types=top_data,
+                stage_path=stage_path,
+                strong_lineage_count=strong_count,
+                trajectory_summary=" · ".join(summary_parts),
+            )
+        )
+
+    return sorted(
+        trajectories,
+        key=lambda x: (-x.strong_lineage_count, -x.paper_count, x.name.lower()),
+    )
+
+
+def render_research_trajectory_html(
+    path: Path,
+    followed: list[FollowedPaper],
+    lineage_edges: list[ResearchLineageEdge],
+    trajectories: list[ResearcherTrajectory],
+) -> None:
+    paper_map = {p.pmid: p for p in followed}
+
+    nodes = []
+    for paper in followed:
+        short_title = paper.title if len(paper.title) <= 70 else paper.title[:67] + "..."
+        disease = ", ".join(paper.disease_terms[:3]) or "not classified"
+        methods = ", ".join(paper.methods[:3]) or "not classified"
+        data_types = ", ".join(paper.data_types[:3]) or "not classified"
+        tracked = ", ".join(paper.tracked_authors)
+        tooltip = (
+            f"<b>{paper.title}</b><br>"
+            f"PMID: {paper.pmid}<br>"
+            f"Year: {paper.year or 'Unknown'}<br>"
+            f"Researchers: {tracked}<br>"
+            f"Stage: {paper.research_stage}<br>"
+            f"Disease: {disease}<br>"
+            f"Methods: {methods}<br>"
+            f"Data: {data_types}<br>"
+            f"Question: {paper.research_question}"
+        )
+        nodes.append(
+            {
+                "id": paper.pmid,
+                "label": f"{paper.year or '?'} | {paper.research_stage}\\n{short_title}",
+                "title": tooltip,
+                "group": paper.research_stage,
+                "url": paper.pubmed_url,
+                "authors": paper.tracked_authors,
+            }
+        )
+
+    graph_edges = []
+    for idx, edge in enumerate(lineage_edges):
+        if edge.source not in paper_map or edge.target not in paper_map:
+            continue
+        width = 4 if edge.score >= 0.95 else (3 if edge.score >= 0.85 else 1.5)
+        dashes = edge.score < 0.85
+        title = (
+            f"{edge.relation} | score={edge.score:.2f}"
+            + (f"<br>{edge.progression}" if edge.progression else "")
+            + f"<br>{edge.evidence}"
+        )
+        graph_edges.append(
+            {
+                "id": f"e{idx}",
+                "from": edge.source,
+                "to": edge.target,
+                "arrows": "to",
+                "width": width,
+                "dashes": dashes,
+                "title": title,
+                "authors": edge.tracked_authors,
+                "relation": edge.relation,
+                "score": edge.score,
+            }
+        )
+
+    researcher_options = [
+        {"key": item.key, "name": item.name, "summary": item.trajectory_summary}
+        for item in trajectories
+    ]
+
+    payload_nodes = json.dumps(nodes, ensure_ascii=False)
+    payload_edges = json.dumps(graph_edges, ensure_ascii=False)
+    payload_researchers = json.dumps(researcher_options, ensure_ascii=False)
+
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SKKU PubMed Research Trajectory</title>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+body {{ font-family: Arial, sans-serif; margin: 0; background: #fafafa; }}
+header {{ padding: 16px 20px; background: white; border-bottom: 1px solid #ddd; }}
+.controls {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }}
+select {{ padding: 7px 10px; min-width: 260px; }}
+#summary {{ margin-top: 8px; font-size: 13px; color: #444; }}
+#network {{ height: 78vh; background: white; }}
+.legend {{ padding: 10px 20px; font-size: 12px; background: white; border-top: 1px solid #ddd; }}
+.badge {{ display: inline-block; margin-right: 14px; }}
+</style>
+</head>
+<body>
+<header>
+  <h2 style="margin:0 0 10px 0">SKKU-seeded PubMed Research Trajectory</h2>
+  <div class="controls">
+    <label>Researcher:
+      <select id="researcher"><option value="">All researchers</option></select>
+    </label>
+    <label><input type="checkbox" id="strongOnly"> strong citation lineage only (score ≥ 0.95)</label>
+  </div>
+  <div id="summary">All tracked researchers</div>
+</header>
+<div id="network"></div>
+<div class="legend">
+  <span class="badge"><b>Solid/thick</b>: stronger citation-supported lineage</span>
+  <span class="badge"><b>Dashed/thin</b>: ORCID/name continuation without direct citation</span>
+  <span class="badge">Double-click a paper to open PubMed</span>
+</div>
+<script>
+const allNodes = {payload_nodes};
+const allEdges = {payload_edges};
+const researchers = {payload_researchers};
+
+const select = document.getElementById("researcher");
+for (const r of researchers) {{
+  const opt = document.createElement("option");
+  opt.value = r.name;
+  opt.textContent = r.name;
+  select.appendChild(opt);
+}}
+const summaryMap = Object.fromEntries(researchers.map(r => [r.name, r.summary]));
+
+const network = new vis.Network(
+  document.getElementById("network"),
+  {{ nodes: new vis.DataSet([]), edges: new vis.DataSet([]) }},
+  {{
+    layout: {{ improvedLayout: true }},
+    physics: {{ stabilization: true, barnesHut: {{ gravitationalConstant: -12000 }} }},
+    interaction: {{ hover: true, navigationButtons: true }},
+    nodes: {{ shape: "box", margin: 10, font: {{ multi: "html", size: 12 }} }},
+    edges: {{ smooth: {{ type: "dynamic" }} }}
+  }}
+);
+
+function redraw() {{
+  const name = select.value;
+  const strongOnly = document.getElementById("strongOnly").checked;
+
+  let nodes = allNodes.filter(n => !name || n.authors.includes(name));
+  const ids = new Set(nodes.map(n => n.id));
+  let edges = allEdges.filter(e =>
+    ids.has(e.from) && ids.has(e.to) &&
+    (!name || e.authors.includes(name)) &&
+    (!strongOnly || e.score >= 0.95)
+  );
+
+  if (strongOnly) {{
+    const edgeIds = new Set();
+    for (const e of edges) {{ edgeIds.add(e.from); edgeIds.add(e.to); }}
+    nodes = nodes.filter(n => edgeIds.has(n.id));
+  }}
+
+  network.setData({{
+    nodes: new vis.DataSet(nodes),
+    edges: new vis.DataSet(edges)
+  }});
+
+  if (name) {{
+    document.getElementById("summary").textContent = summaryMap[name] || name;
+  }} else {{
+    document.getElementById("summary").textContent =
+      "All tracked researchers · papers=" + nodes.length + " · edges=" + edges.length;
+  }}
+  if (nodes.length) network.fit();
+}}
+
+select.addEventListener("change", redraw);
+document.getElementById("strongOnly").addEventListener("change", redraw);
+network.on("doubleClick", params => {{
+  if (!params.nodes.length) return;
+  const node = allNodes.find(n => n.id === params.nodes[0]);
+  if (node && node.url) window.open(node.url, "_blank");
+}});
+redraw();
+</script>
+</body>
+</html>
+"""
+    path.write_text(html, encoding="utf-8")
+
+
 def write_csv(path: Path, rows: list[dict]) -> None:
     if not rows:
         path.write_text("", encoding="utf-8")
@@ -638,6 +915,11 @@ def main() -> int:
         registry_map,
         annotations,
     )
+    trajectories = build_researcher_trajectories(
+        registry,
+        followed,
+        lineage_edges,
+    )
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -671,6 +953,16 @@ def main() -> int:
         annotation_rows.append(row)
     write_csv(out / "paper_annotations.csv", annotation_rows)
 
+    trajectory_rows = []
+    for item in trajectories:
+        row = asdict(item)
+        row["top_diseases"] = "; ".join(item.top_diseases)
+        row["top_methods"] = "; ".join(item.top_methods)
+        row["top_data_types"] = "; ".join(item.top_data_types)
+        row["stage_path"] = " -> ".join(item.stage_path)
+        trajectory_rows.append(row)
+    write_csv(out / "researcher_summary.csv", trajectory_rows)
+
     write_csv(out / "continuation_edges.csv", [asdict(e) for e in edges])
 
     lineage_rows = []
@@ -696,6 +988,16 @@ def main() -> int:
         json.dumps([asdict(x) for x in lineage_edges], ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    (out / "researcher_summary.json").write_text(
+        json.dumps([asdict(x) for x in trajectories], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    render_research_trajectory_html(
+        out / "research_trajectory.html",
+        followed,
+        lineage_edges,
+        trajectories,
+    )
     write_report(out / "continuation.md", registry, followed, edges, lineage_edges)
 
     summary = {
@@ -716,6 +1018,10 @@ def main() -> int:
         "papers_with_data_types": sum(bool(a.data_types) for a in annotations.values()),
         "papers_with_disease_terms": sum(bool(a.disease_terms) for a in annotations.values()),
         "research_stages": dict(Counter(a.research_stage for a in annotations.values())),
+        "researcher_trajectories": len(trajectories),
+        "researchers_with_strong_lineage": sum(
+            t.strong_lineage_count > 0 for t in trajectories
+        ),
     }
     (out / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2),
