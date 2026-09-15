@@ -92,7 +92,7 @@ def load_seed_papers(path: Path) -> list[Paper]:
                     f"{a.name}: {aff}"
                     for a in authors if a.is_skku
                     for aff in a.affiliations
-                    if "sungkyunkwan" in aff.lower() or re.search(r"\\bskku\\b", aff, re.I)
+                    if "sungkyunkwan" in aff.lower() or re.search(r"\bskku\b", aff, re.I)
                 ],
                 abstract=str(row.get("abstract", "")),
                 mesh_terms=list(row.get("mesh_terms", []) or []),
