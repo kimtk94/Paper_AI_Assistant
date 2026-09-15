@@ -12,6 +12,7 @@ sys.path.insert(0, str(SRC))
 import skku_pubmed_lineage as lineage
 import skku_pubmed_author_followup as followup
 import skku_pubmed_researcher_network as researcher_network
+import skku_pubmed_research_communities as research_communities
 
 
 PUBMED_XML = """<PubmedArticle>
@@ -670,6 +671,111 @@ class TestResearcherNetwork(unittest.TestCase):
         self.assertEqual(edges[0].direct_citations, 1)
         self.assertGreaterEqual(edges[0].score, 0.85)
 
+
+
+class TestResearchCommunities(unittest.TestCase):
+    def test_two_dense_groups_form_two_communities(self):
+        nodes = [
+            {
+                "key": "a", "name": "A", "orcid": "a", "paper_count": 5,
+                "first_year": 2020, "last_year": 2026,
+                "top_diseases": ["stroke"], "top_methods": ["GWAS"],
+                "top_data_types": ["genomics"],
+                "stage_path": ["discovery/association"], "strong_lineage_count": 1,
+            },
+            {
+                "key": "b", "name": "B", "orcid": "b", "paper_count": 4,
+                "first_year": 2021, "last_year": 2026,
+                "top_diseases": ["stroke"], "top_methods": ["Mendelian randomization"],
+                "top_data_types": ["genomics"],
+                "stage_path": ["causal inference"], "strong_lineage_count": 2,
+            },
+            {
+                "key": "c", "name": "C", "orcid": "c", "paper_count": 6,
+                "first_year": 2019, "last_year": 2025,
+                "top_diseases": ["cancer"], "top_methods": ["single-cell RNA-seq"],
+                "top_data_types": ["transcriptomics", "single-cell"],
+                "stage_path": ["mechanism"], "strong_lineage_count": 1,
+            },
+            {
+                "key": "d", "name": "D", "orcid": "d", "paper_count": 3,
+                "first_year": 2022, "last_year": 2026,
+                "top_diseases": ["cancer"], "top_methods": ["spatial transcriptomics"],
+                "top_data_types": ["transcriptomics", "spatial"],
+                "stage_path": ["mechanism"], "strong_lineage_count": 0,
+            },
+        ]
+        edges = [
+            {
+                "source": "a", "target": "b", "relation": "collaboration",
+                "score": 0.93, "shared_papers": 3, "direct_citations": 0,
+                "topic_similarity": 0.6, "shared_diseases": ["stroke"],
+                "shared_methods": [], "shared_data_types": ["genomics"], "evidence": "",
+            },
+            {
+                "source": "c", "target": "d", "relation": "collaboration",
+                "score": 0.91, "shared_papers": 2, "direct_citations": 0,
+                "topic_similarity": 0.5, "shared_diseases": ["cancer"],
+                "shared_methods": [], "shared_data_types": ["transcriptomics"], "evidence": "",
+            },
+            {
+                "source": "b", "target": "c", "relation": "thematic_overlap",
+                "score": 0.50, "shared_papers": 0, "direct_citations": 0,
+                "topic_similarity": 0.11, "shared_diseases": [],
+                "shared_methods": [], "shared_data_types": [], "evidence": "",
+            },
+        ]
+
+        communities, members, community_edges = research_communities.build_research_communities(
+            nodes, edges, min_edge_score=0.65
+        )
+
+        self.assertEqual(len(communities), 2)
+        self.assertEqual(sorted(x.researcher_count for x in communities), [2, 2])
+        self.assertEqual(len(members), 4)
+        self.assertEqual(sum(m.role == "hub" for m in members), 2)
+        labels = " | ".join(x.label for x in communities)
+        self.assertIn("stroke", labels)
+        self.assertIn("cancer", labels)
+        self.assertEqual(len(community_edges), 1)
+
+    def test_live_style_two_researcher_cluster_has_hub_and_theme(self):
+        nodes = [
+            {
+                "key": "orcid:1", "name": "Researcher 1", "orcid": "1",
+                "paper_count": 10, "first_year": 2020, "last_year": 2026,
+                "top_diseases": ["Crohn Disease"],
+                "top_methods": ["pharmacokinetics/TDM"],
+                "top_data_types": ["clinical registry/cohort"],
+                "stage_path": ["pharmacokinetics"], "strong_lineage_count": 1,
+            },
+            {
+                "key": "orcid:2", "name": "Researcher 2", "orcid": "2",
+                "paper_count": 8, "first_year": 2021, "last_year": 2026,
+                "top_diseases": ["Crohn Disease"],
+                "top_methods": ["biomarker analysis"],
+                "top_data_types": ["clinical registry/cohort"],
+                "stage_path": ["discovery/association"], "strong_lineage_count": 0,
+            },
+        ]
+        edges = [
+            {
+                "source": "orcid:1", "target": "orcid:2", "relation": "collaboration",
+                "score": 0.9357, "shared_papers": 5, "direct_citations": 0,
+                "topic_similarity": 0.5714, "shared_diseases": ["Crohn Disease"],
+                "shared_methods": [], "shared_data_types": ["clinical registry/cohort"],
+                "evidence": "shared papers=5",
+            }
+        ]
+
+        communities, members, _ = research_communities.build_research_communities(
+            nodes, edges, min_edge_score=0.65
+        )
+        self.assertEqual(len(communities), 1)
+        self.assertEqual(communities[0].researcher_count, 2)
+        self.assertIn("Crohn Disease", communities[0].label)
+        self.assertTrue(communities[0].hub_researcher)
+        self.assertEqual(sum(m.role == "hub" for m in members), 1)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
