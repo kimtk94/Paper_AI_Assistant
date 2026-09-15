@@ -21,6 +21,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -228,29 +229,106 @@ class PubMedClient:
         if elapsed < self.min_interval:
             time.sleep(self.min_interval - elapsed)
 
-    def _request(self, endpoint: str, params: dict[str, str], post: bool = False) -> bytes:
-        common = {"tool": TOOL, "email": self.email}
-        if self.api_key:
-            common["api_key"] = self.api_key
-        body = urllib.parse.urlencode({**params, **common}).encode("utf-8")
+    def _request(
+        self,
+        endpoint: str,
+        params: dict[str, str],
+        post: bool = False,
+        max_attempts: int = 6,
+    ) -> bytes:
+        """Call NCBI E-utilities with throttling and transient-error retries.
+
+        Full-corpus crawls make many E-utility calls, so a single 429/5xx/timeout
+        must not abort the entire run. Invalid API keys are detected and the
+        client falls back to the unauthenticated NCBI rate limit.
+        """
         url = f"{EUTILS}/{endpoint}"
-        self._wait()
-        if post:
-            req = urllib.request.Request(
-                url,
-                data=body,
-                headers={"User-Agent": f"{TOOL}/1.0 ({self.email})"},
-                method="POST",
-            )
-        else:
-            req = urllib.request.Request(
-                f"{url}?{body.decode('utf-8')}",
-                headers={"User-Agent": f"{TOOL}/1.0 ({self.email})"},
-            )
-        with urllib.request.urlopen(req, timeout=self.timeout) as response:
-            payload = response.read()
-        self.last_request = time.monotonic()
-        return payload
+        retryable_http = {429, 500, 502, 503, 504}
+        dropped_bad_api_key = False
+        last_error: Exception | None = None
+
+        for attempt in range(1, max_attempts + 1):
+            common = {"tool": TOOL, "email": self.email}
+            if self.api_key:
+                common["api_key"] = self.api_key
+            body = urllib.parse.urlencode({**params, **common}).encode("utf-8")
+            self._wait()
+
+            if post:
+                req = urllib.request.Request(
+                    url,
+                    data=body,
+                    headers={"User-Agent": f"{TOOL}/1.0 ({self.email})"},
+                    method="POST",
+                )
+            else:
+                req = urllib.request.Request(
+                    f"{url}?{body.decode('utf-8')}",
+                    headers={"User-Agent": f"{TOOL}/1.0 ({self.email})"},
+                )
+
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as response:
+                    payload = response.read()
+                self.last_request = time.monotonic()
+                return payload
+            except urllib.error.HTTPError as exc:
+                self.last_request = time.monotonic()
+                last_error = exc
+                try:
+                    detail = exc.read().decode("utf-8", errors="replace")[:500]
+                except Exception:
+                    detail = ""
+
+                invalid_key = (
+                    bool(self.api_key)
+                    and exc.code in {400, 401, 403}
+                    and "api" in detail.lower()
+                    and "key" in detail.lower()
+                )
+                if invalid_key and not dropped_bad_api_key:
+                    print(
+                        "[ncbi] API key was rejected; retrying without NCBI_API_KEY",
+                        file=sys.stderr,
+                    )
+                    self.api_key = ""
+                    self.min_interval = 0.36
+                    dropped_bad_api_key = True
+                    continue
+
+                if exc.code not in retryable_http or attempt >= max_attempts:
+                    raise RuntimeError(
+                        f"NCBI {endpoint} failed with HTTP {exc.code}: "
+                        f"{detail or exc.reason}"
+                    ) from exc
+
+                retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                try:
+                    delay = float(retry_after) if retry_after else min(30.0, 2 ** (attempt - 1))
+                except ValueError:
+                    delay = min(30.0, 2 ** (attempt - 1))
+                print(
+                    f"[ncbi] HTTP {exc.code} on {endpoint}; "
+                    f"retry {attempt}/{max_attempts} after {delay:g}s",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+            except (urllib.error.URLError, TimeoutError) as exc:
+                self.last_request = time.monotonic()
+                last_error = exc
+                if attempt >= max_attempts:
+                    raise RuntimeError(
+                        f"NCBI {endpoint} failed after {max_attempts} attempts: {exc}"
+                    ) from exc
+                delay = min(30.0, 2 ** (attempt - 1))
+                print(
+                    f"[ncbi] network/timeout on {endpoint}: {exc}; "
+                    f"retry {attempt}/{max_attempts} after {delay:g}s",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+
+        raise RuntimeError(f"NCBI {endpoint} failed: {last_error}")
 
     def search_page(
         self,
@@ -288,15 +366,33 @@ class PubMedClient:
     def fetch(self, pmids: Iterable[str], batch_size: int = 150) -> list[Paper]:
         ids = list(dict.fromkeys(str(x) for x in pmids if str(x).strip()))
         papers = []
-        for start in range(0, len(ids), batch_size):
+        total_batches = math.ceil(len(ids) / batch_size) if ids else 0
+        for batch_index, start in enumerate(range(0, len(ids), batch_size), 1):
             batch = ids[start : start + batch_size]
             payload = self._request(
                 "efetch.fcgi",
                 {"db": "pubmed", "id": ",".join(batch), "retmode": "xml"},
                 post=len(batch) > 20,
             )
-            root = ET.fromstring(payload)
+            try:
+                root = ET.fromstring(payload)
+            except ET.ParseError as exc:
+                preview = payload[:300].decode("utf-8", errors="replace")
+                raise RuntimeError(
+                    f"NCBI efetch returned malformed XML for batch "
+                    f"{batch_index}/{total_batches}: {preview}"
+                ) from exc
             papers.extend(parse_paper(x) for x in root.findall("./PubmedArticle"))
+            if total_batches > 1 and (
+                batch_index == 1
+                or batch_index == total_batches
+                or batch_index % 10 == 0
+            ):
+                print(
+                    f"[fetch] batch {batch_index}/{total_batches}; "
+                    f"parsed papers={len(papers):,}",
+                    file=sys.stderr,
+                )
         return papers
 
     def links(self, pmid: str, linkname: str) -> set[str]:
