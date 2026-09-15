@@ -777,5 +777,118 @@ class TestResearchCommunities(unittest.TestCase):
         self.assertTrue(communities[0].hub_researcher)
         self.assertEqual(sum(m.role == "hub" for m in members), 1)
 
+
+class FakePagedPubMedClient:
+    def __init__(self, resolver):
+        self.resolver = resolver
+        self.calls = []
+
+    def search_page(self, query, retstart=0, retmax=500):
+        self.calls.append((query, retstart, retmax))
+        ids = list(self.resolver(query))
+        count = len(ids)
+        if retmax == 0:
+            return count, []
+        return count, ids[retstart:retstart + retmax]
+
+
+class TestPartitionedPubMedCrawl(unittest.TestCase):
+    def test_year_partition_pagination_preserves_total_hit_count_with_cap(self):
+        def resolver(query):
+            if "2024:2025[dp]" in query:
+                return [f"ALL{i}" for i in range(12)]
+            if "2025:2025[dp]" in query:
+                return [f"25{i}" for i in range(7)]
+            if "2024:2024[dp]" in query:
+                return [f"24{i}" for i in range(5)]
+            return []
+
+        client = FakePagedPubMedClient(resolver)
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "crawl_checkpoint.json"
+            total, pmids, windows = lineage.search_partitioned_pubmed(
+                client,
+                start_year=2024,
+                end_year=2025,
+                page_size=3,
+                max_results=9,
+                checkpoint_path=checkpoint,
+            )
+
+            self.assertEqual(total, 12)
+            self.assertEqual(len(pmids), 9)
+            self.assertEqual(pmids[:3], ["250", "251", "252"])
+            self.assertEqual(len(windows), 2)
+            self.assertTrue(checkpoint.exists())
+            state = json.loads(checkpoint.read_text(encoding="utf-8"))
+            self.assertEqual(len(state["retrieved_pmids"]), 9)
+            self.assertEqual(
+                [x["label"] for x in state["completed_windows"]],
+                ["2025", "2024"],
+            )
+
+    def test_resume_skips_completed_year_windows(self):
+        def resolver(query):
+            if "2024:2025[dp]" in query:
+                return [f"ALL{i}" for i in range(6)]
+            if "2025:2025[dp]" in query:
+                return ["a", "b", "c"]
+            if "2024:2024[dp]" in query:
+                return ["d", "e", "f"]
+            return []
+
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "crawl_checkpoint.json"
+            first = FakePagedPubMedClient(resolver)
+            total1, pmids1, _ = lineage.search_partitioned_pubmed(
+                first,
+                start_year=2024,
+                end_year=2025,
+                page_size=2,
+                max_results=0,
+                checkpoint_path=checkpoint,
+            )
+            second = FakePagedPubMedClient(resolver)
+            total2, pmids2, windows2 = lineage.search_partitioned_pubmed(
+                second,
+                start_year=2024,
+                end_year=2025,
+                page_size=2,
+                max_results=0,
+                checkpoint_path=checkpoint,
+                resume=True,
+            )
+
+            self.assertEqual((total1, total2), (6, 6))
+            self.assertEqual(pmids1, pmids2)
+            self.assertEqual(len(windows2), 2)
+            # Resume still performs one overall count request but no year pages.
+            self.assertEqual(len(second.calls), 1)
+            self.assertIn("2024:2025[dp]", second.calls[0][0])
+
+    def test_year_above_pubmed_10k_limit_is_split_by_month(self):
+        def resolver(query):
+            if "2026:2026[dp]" in query:
+                return [f"Y{i}" for i in range(10001)]
+            if "2026/12/01:2026/12/31[dp]" in query:
+                return [f"D{i}" for i in range(6000)]
+            return []
+
+        client = FakePagedPubMedClient(resolver)
+        total, pmids, windows = lineage.search_partitioned_pubmed(
+            client,
+            start_year=2026,
+            end_year=2026,
+            page_size=4,
+            max_results=10,
+        )
+
+        self.assertEqual(total, 10001)
+        self.assertEqual(len(pmids), 10)
+        self.assertEqual(windows[0]["label"], "2026-12")
+        self.assertTrue(
+            any("2026/12/01:2026/12/31[dp]" in query for query, _, _ in client.calls)
+        )
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
