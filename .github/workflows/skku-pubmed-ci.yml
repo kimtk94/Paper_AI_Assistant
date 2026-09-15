@@ -45,7 +45,8 @@ jobs:
           python -m py_compile \
             src/skku_pubmed_lineage.py \
             src/skku_pubmed_annotation.py \
-            src/skku_pubmed_author_followup.py
+            src/skku_pubmed_author_followup.py \
+            src/skku_pubmed_researcher_network.py
 
       - name: Run deterministic unit tests
         run: python -m unittest discover -s tests -p "test_skku_pubmed.py" -v
@@ -312,6 +313,38 @@ jobs:
           })
           print("Researcher trajectory:", trajectories[0])
           print("Matched PMIDs:", [p["pmid"] for p in papers])
+          PY
+
+      - name: Build researcher-level network
+        run: |
+          python src/skku_pubmed_researcher_network.py \
+            --input-dir /tmp/skku_pubmed_followup \
+            --topic-threshold 0.30
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("/tmp/skku_pubmed_followup")
+          summary = json.loads(
+              (root / "researcher_network_summary.json").read_text(encoding="utf-8")
+          )
+          nodes = json.loads(
+              (root / "researcher_network_nodes.json").read_text(encoding="utf-8")
+          )
+          edges = json.loads(
+              (root / "researcher_network_edges.json").read_text(encoding="utf-8")
+          )
+
+          assert summary["researchers"] == len(nodes), summary
+          assert (root / "researcher_network_nodes.csv").exists()
+          assert (root / "researcher_network_edges.csv").exists()
+          assert (root / "researcher_network.html").exists()
+          html = (root / "researcher_network.html").read_text(encoding="utf-8")
+          assert "vis-network" in html
+          assert "thematic_overlap" in html
+          print("Researcher network validation:", summary)
+          print("Top network edges:", edges[:5])
           PY
 
       - name: Upload smoke outputs
