@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from skku_pubmed_lineage import Author, Paper, PubMedClient
+from skku_pubmed_annotation import PaperAnnotation, annotate_paper, progression_summary
 
 
 @dataclass
@@ -52,6 +53,11 @@ class FollowedPaper:
     tracked_author_keys: list[str]
     current_affiliations: list[str]
     skku_current: bool
+    disease_terms: list[str]
+    methods: list[str]
+    data_types: list[str]
+    research_stage: str
+    research_question: str
 
 
 @dataclass
@@ -63,6 +69,9 @@ class ContinuationEdge:
     author_key: str
     confidence: str
     evidence: str
+    source_stage: str = ""
+    target_stage: str = ""
+    progression: str = ""
 
 
 @dataclass
@@ -207,6 +216,7 @@ def make_followed_paper(
     paper: Paper,
     keys: set[str],
     registry_map: dict[str, TrackedAuthor],
+    annotation: PaperAnnotation,
 ) -> FollowedPaper:
     tracked_names = []
     affiliations = []
@@ -231,6 +241,11 @@ def make_followed_paper(
         tracked_author_keys=sorted(keys),
         current_affiliations=sorted(set(affiliations)),
         skku_current=skku_current,
+        disease_terms=annotation.disease_terms,
+        methods=annotation.methods,
+        data_types=annotation.data_types,
+        research_stage=annotation.research_stage,
+        research_question=annotation.research_question,
     )
 
 
@@ -319,6 +334,7 @@ def build_research_lineage_edges(
     edges: list[ContinuationEdge],
     paper_authors: dict[str, set[str]],
     registry_map: dict[str, TrackedAuthor],
+    annotations: dict[str, PaperAnnotation] | None = None,
 ) -> list[ResearchLineageEdge]:
     """Collapse raw author/citation edges into interpretable research-lineage edges.
 
@@ -328,6 +344,7 @@ def build_research_lineage_edges(
     3) citation between different tracked researchers
     4) same tracked researcher only, without direct citation evidence
     """
+    annotations = annotations or {}
     citation_pairs = {
         (e.source, e.target)
         for e in edges
@@ -350,6 +367,8 @@ def build_research_lineage_edges(
             score = 0.75 if edge.confidence == "high" else 0.45
             evidence = f"{edge.evidence}; no direct PubMed citation detected between consecutive papers"
 
+        source_ann = annotations.get(edge.source)
+        target_ann = annotations.get(edge.target)
         item = ResearchLineageEdge(
             source=edge.source,
             target=edge.target,
@@ -358,6 +377,13 @@ def build_research_lineage_edges(
             tracked_authors=[edge.tracked_author] if edge.tracked_author else [],
             confidence=edge.confidence,
             evidence=evidence,
+            source_stage=source_ann.research_stage if source_ann else "",
+            target_stage=target_ann.research_stage if target_ann else "",
+            progression=(
+                progression_summary(source_ann, target_ann)
+                if source_ann and target_ann
+                else ""
+            ),
         )
         output[(item.source, item.target, item.relation, edge.author_key)] = item
 
@@ -415,6 +441,8 @@ def build_research_lineage_edges(
                 f"tracked researchers: {', '.join(names) or 'none'}"
             )
 
+        source_ann = annotations.get(edge.source)
+        target_ann = annotations.get(edge.target)
         item = ResearchLineageEdge(
             source=edge.source,
             target=edge.target,
@@ -423,6 +451,13 @@ def build_research_lineage_edges(
             tracked_authors=names,
             confidence=confidence,
             evidence=evidence,
+            source_stage=source_ann.research_stage if source_ann else "",
+            target_stage=target_ann.research_stage if target_ann else "",
+            progression=(
+                progression_summary(source_ann, target_ann)
+                if source_ann and target_ann
+                else ""
+            ),
         )
         output[(item.source, item.target, item.relation, "|".join(names))] = item
 
@@ -557,8 +592,13 @@ def main() -> int:
         max_per_author=args.max_per_author,
     )
 
+    annotations = {
+        pmid: annotate_paper(paper)
+        for pmid, paper in papers.items()
+    }
+
     followed = [
-        make_followed_paper(papers[pmid], keys, registry_map)
+        make_followed_paper(papers[pmid], keys, registry_map, annotations[pmid])
         for pmid, keys in paper_authors.items()
     ]
     followed.sort(key=lambda p: (p.year, p.pmid), reverse=True)
@@ -576,6 +616,7 @@ def main() -> int:
         edges,
         paper_authors,
         registry_map,
+        annotations,
     )
 
     out = Path(args.output_dir)
@@ -594,8 +635,22 @@ def main() -> int:
         row["tracked_authors"] = "; ".join(item.tracked_authors)
         row["tracked_author_keys"] = "; ".join(item.tracked_author_keys)
         row["current_affiliations"] = " | ".join(item.current_affiliations)
+        row["disease_terms"] = "; ".join(item.disease_terms)
+        row["methods"] = "; ".join(item.methods)
+        row["data_types"] = "; ".join(item.data_types)
         followed_rows.append(row)
     write_csv(out / "lineage_papers.csv", followed_rows)
+
+    annotation_rows = []
+    for item in annotations.values():
+        row = asdict(item)
+        row["disease_terms"] = "; ".join(item.disease_terms)
+        row["methods"] = "; ".join(item.methods)
+        row["data_types"] = "; ".join(item.data_types)
+        row["evidence_terms"] = "; ".join(item.evidence_terms)
+        annotation_rows.append(row)
+    write_csv(out / "paper_annotations.csv", annotation_rows)
+
     write_csv(out / "continuation_edges.csv", [asdict(e) for e in edges])
 
     lineage_rows = []
@@ -607,6 +662,10 @@ def main() -> int:
 
     (out / "lineage_papers.json").write_text(
         json.dumps([asdict(x) for x in followed], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out / "paper_annotations.json").write_text(
+        json.dumps([asdict(x) for x in annotations.values()], ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     (out / "continuation_edges.json").write_text(
@@ -632,6 +691,11 @@ def main() -> int:
             e.relation in {"direct_citation_continuation", "direct_citation_same_author"}
             for e in lineage_edges
         ),
+        "annotated_papers": len(annotations),
+        "papers_with_methods": sum(bool(a.methods) for a in annotations.values()),
+        "papers_with_data_types": sum(bool(a.data_types) for a in annotations.values()),
+        "papers_with_disease_terms": sum(bool(a.disease_terms) for a in annotations.values()),
+        "research_stages": dict(Counter(a.research_stage for a in annotations.values())),
     }
     (out / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2),
