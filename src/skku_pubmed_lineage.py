@@ -15,6 +15,8 @@ from __future__ import annotations
 import argparse
 import calendar
 import csv
+import hashlib
+import http.client
 import json
 import math
 import os
@@ -313,7 +315,14 @@ class PubMedClient:
                     file=sys.stderr,
                 )
                 time.sleep(delay)
-            except (urllib.error.URLError, TimeoutError) as exc:
+            except (
+                urllib.error.URLError,
+                TimeoutError,
+                http.client.IncompleteRead,
+                http.client.RemoteDisconnected,
+                ConnectionResetError,
+                BrokenPipeError,
+            ) as exc:
                 self.last_request = time.monotonic()
                 last_error = exc
                 if attempt >= max_attempts:
@@ -363,26 +372,83 @@ class PubMedClient:
         # Backward-compatible one-page search used by author follow-up.
         return self.search_page(query, retstart=0, retmax=max_results)
 
-    def fetch(self, pmids: Iterable[str], batch_size: int = 150) -> list[Paper]:
+    def fetch(
+        self,
+        pmids: Iterable[str],
+        batch_size: int = 150,
+        cache_dir: Path | None = None,
+        resume: bool = False,
+    ) -> list[Paper]:
+        """Fetch PubMed records in resumable batches.
+
+        When cache_dir is provided, each successful efetch XML batch is written
+        atomically to disk. With resume=True, matching cached batches are parsed
+        locally instead of being downloaded again. The batch filename includes
+        a hash of its PMID list so stale caches cannot be silently reused.
+        """
         ids = list(dict.fromkeys(str(x) for x in pmids if str(x).strip()))
-        papers = []
+        papers: list[Paper] = []
         total_batches = math.ceil(len(ids) / batch_size) if ids else 0
+
+        cache_path = Path(cache_dir) if cache_dir is not None else None
+        if cache_path is not None:
+            cache_path.mkdir(parents=True, exist_ok=True)
+
+        cache_hits = 0
+        downloaded = 0
+
         for batch_index, start in enumerate(range(0, len(ids), batch_size), 1):
             batch = ids[start : start + batch_size]
-            payload = self._request(
-                "efetch.fcgi",
-                {"db": "pubmed", "id": ",".join(batch), "retmode": "xml"},
-                post=len(batch) > 20,
+            batch_token = hashlib.sha1(",".join(batch).encode("utf-8")).hexdigest()[:16]
+            cache_file = (
+                cache_path / f"batch_{batch_index:05d}_{batch_token}.xml"
+                if cache_path is not None
+                else None
             )
-            try:
-                root = ET.fromstring(payload)
-            except ET.ParseError as exc:
-                preview = payload[:300].decode("utf-8", errors="replace")
-                raise RuntimeError(
-                    f"NCBI efetch returned malformed XML for batch "
-                    f"{batch_index}/{total_batches}: {preview}"
-                ) from exc
+
+            payload: bytes | None = None
+            root: ET.Element | None = None
+            source = "download"
+
+            if resume and cache_file is not None and cache_file.exists():
+                try:
+                    payload = cache_file.read_bytes()
+                    root = ET.fromstring(payload)
+                    cache_hits += 1
+                    source = "cache"
+                except (OSError, ET.ParseError):
+                    # A partial/corrupt cache is never trusted.
+                    try:
+                        cache_file.unlink()
+                    except OSError:
+                        pass
+                    payload = None
+                    root = None
+
+            if payload is None:
+                payload = self._request(
+                    "efetch.fcgi",
+                    {"db": "pubmed", "id": ",".join(batch), "retmode": "xml"},
+                    post=len(batch) > 20,
+                )
+                try:
+                    root = ET.fromstring(payload)
+                except ET.ParseError as exc:
+                    preview = payload[:300].decode("utf-8", errors="replace")
+                    raise RuntimeError(
+                        f"NCBI efetch returned malformed XML for batch "
+                        f"{batch_index}/{total_batches}: {preview}"
+                    ) from exc
+
+                downloaded += 1
+                if cache_file is not None:
+                    tmp_file = cache_file.with_suffix(cache_file.suffix + ".tmp")
+                    tmp_file.write_bytes(payload)
+                    tmp_file.replace(cache_file)
+
+            assert root is not None
             papers.extend(parse_paper(x) for x in root.findall("./PubmedArticle"))
+
             if total_batches > 1 and (
                 batch_index == 1
                 or batch_index == total_batches
@@ -390,9 +456,17 @@ class PubMedClient:
             ):
                 print(
                     f"[fetch] batch {batch_index}/{total_batches}; "
-                    f"parsed papers={len(papers):,}",
+                    f"parsed papers={len(papers):,}; source={source}; "
+                    f"cached={cache_hits:,}; downloaded={downloaded:,}",
                     file=sys.stderr,
                 )
+
+        if cache_path is not None:
+            print(
+                f"[fetch] complete; cached batches={cache_hits:,}; "
+                f"downloaded batches={downloaded:,}; cache={cache_path}",
+                file=sys.stderr,
+            )
         return papers
 
     def links(self, pmid: str, linkname: str) -> set[str]:
@@ -1049,7 +1123,11 @@ def main() -> int:
         file=sys.stderr,
     )
 
-    fetched = client.fetch(pmids)
+    fetched = client.fetch(
+        pmids,
+        cache_dir=out / "efetch_cache",
+        resume=args.resume,
+    )
     papers = [p for p in fetched if p.skku_affiliation_evidence]
     papers.sort(key=lambda p: (p.year, p.pmid), reverse=True)
     print(f"[verify] SKKU affiliation verified={len(papers):,}", file=sys.stderr)
