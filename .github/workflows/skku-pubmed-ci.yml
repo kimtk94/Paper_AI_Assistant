@@ -85,9 +85,9 @@ jobs:
           for attempt in 1 2 3; do
             echo "PubMed smoke attempt $attempt/3"
             if python src/skku_pubmed_lineage.py \
-              --start-year 2025 \
+              --start-year 2020 \
               --end-year 2026 \
-              --max-results 3 \
+              --max-results 100 \
               --skip-citations \
               --topic-threshold 0.30 \
               --output-dir /tmp/skku_pubmed_lineage; then
@@ -121,14 +121,89 @@ jobs:
           print("PubMed output validation:", summary)
           PY
 
-      - name: Smoke-test ORCID continuation stage
+      - name: Discover a real SKKU ORCID with multiple PubMed papers
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "src")
+          from skku_pubmed_lineage import PubMedClient
+
+          source = Path("/tmp/skku_pubmed_lineage/papers.json")
+          papers = json.loads(source.read_text(encoding="utf-8"))
+          client = PubMedClient(os.environ["NCBI_EMAIL"], os.environ.get("NCBI_API_KEY", ""))
+
+          candidates = []
+          for paper in papers:
+              for author in paper.get("authors", []):
+                  orcid = (author.get("orcid") or "").replace("https://orcid.org/", "").strip()
+                  if not author.get("is_skku") or not orcid:
+                      continue
+                  candidates.append((paper, author, orcid))
+
+          assert candidates, (
+              "No ORCID was present in the live SKKU sample. "
+              "Increase --max-results or widen the year range."
+          )
+
+          selected = None
+          checked = set()
+          for paper, author, orcid in candidates:
+              if orcid in checked:
+                  continue
+              checked.add(orcid)
+              query = f'"orcid {orcid}"[auid] AND 2000:2026[dp]'
+              count, ids = client.search(query, 10)
+              if count >= 2 and len(ids) >= 2:
+                  selected = (paper, author, orcid, count, ids)
+                  break
+
+          assert selected is not None, (
+              f"Checked {len(checked)} real SKKU ORCIDs but none had >=2 PubMed papers."
+          )
+
+          paper, author, orcid, count, ids = selected
+
+          # Build a one-author seed so the follow-up stage must track exactly
+          # the ORCID that passed the live PubMed [auid] search above.
+          seed = dict(paper)
+          seed["authors"] = [author]
+          seed["skku_authors"] = [author["name"]]
+          seed["skku_orcids"] = [orcid]
+          seed["skku_affiliation_evidence"] = [
+              f'{author["name"]}: {aff}'
+              for aff in author.get("affiliations", [])
+              if "sungkyunkwan" in aff.lower() or "skku" in aff.lower()
+          ]
+
+          out = Path("/tmp/skku_orcid_seed.json")
+          out.write_text(json.dumps([seed], ensure_ascii=False, indent=2), encoding="utf-8")
+
+          selection = {
+              "name": author["name"],
+              "orcid": orcid,
+              "seed_pmid": paper["pmid"],
+              "pubmed_count": count,
+              "sample_pmids": ids[:5],
+          }
+          Path("/tmp/skku_orcid_selection.json").write_text(
+              json.dumps(selection, ensure_ascii=False, indent=2),
+              encoding="utf-8",
+          )
+          print("Selected live ORCID:", selection)
+          PY
+
+      - name: End-to-end ORCID continuation must return multiple real papers
         run: |
           python src/skku_pubmed_author_followup.py \
-            --seed-json /tmp/skku_pubmed_lineage/papers.json \
-            --start-year 2024 \
+            --seed-json /tmp/skku_orcid_seed.json \
+            --start-year 2000 \
             --end-year 2026 \
-            --max-authors 3 \
-            --max-per-author 5 \
+            --max-authors 1 \
+            --max-per-author 10 \
             --output-dir /tmp/skku_pubmed_followup
 
           python - <<'PY'
@@ -137,10 +212,21 @@ jobs:
 
           root = Path("/tmp/skku_pubmed_followup")
           summary = json.loads((root / "summary.json").read_text(encoding="utf-8"))
-          assert "tracked_researchers" in summary
+          selection = json.loads(
+              Path("/tmp/skku_orcid_selection.json").read_text(encoding="utf-8")
+          )
+          papers = json.loads((root / "lineage_papers.json").read_text(encoding="utf-8"))
+
+          assert summary["tracked_researchers"] == 1, summary
+          assert summary["high_confidence_orcid"] == 1, summary
+          assert summary["unique_followed_papers"] >= 2, summary
+          assert len(papers) >= 2, papers
+          assert all(selection["name"] in p["tracked_authors"] for p in papers), papers
           assert (root / "continuation.md").exists()
-          assert (root / "lineage_papers.json").exists()
+
+          print("Live ORCID selection:", selection)
           print("Continuation output validation:", summary)
+          print("Matched PMIDs:", [p["pmid"] for p in papers])
           PY
 
       - name: Upload smoke outputs
@@ -151,4 +237,6 @@ jobs:
           path: |
             /tmp/skku_pubmed_lineage
             /tmp/skku_pubmed_followup
+            /tmp/skku_orcid_seed.json
+            /tmp/skku_orcid_selection.json
           if-no-files-found: warn
