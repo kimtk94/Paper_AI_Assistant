@@ -12,6 +12,7 @@ Outputs:
   lineage_papers.csv / lineage_papers.json
   continuation_edges.csv / continuation_edges.json
   lineage_edges.csv / lineage_edges.json
+  paper_annotations.csv / paper_annotations.json
   continuation.md
 """
 
@@ -545,11 +546,30 @@ def write_report(
         )
         for paper in chain:
             aff = "SKKU" if paper.skku_current else "non-SKKU / other affiliation"
+            methods = ", ".join(paper.methods[:3]) or "method not classified"
+            data_types = ", ".join(paper.data_types[:3]) or "data not classified"
+            disease = ", ".join(paper.disease_terms[:2]) or "phenotype not classified"
             lines.append(
                 f"- {paper.year or 'Unknown'} · PMID {paper.pmid} · "
-                f"[{paper.title}]({paper.pubmed_url}) · {aff}"
+                f"[{paper.title}]({paper.pubmed_url}) · {aff} · "
+                f"stage={paper.research_stage} · disease={disease} · "
+                f"method={methods} · data={data_types}"
             )
+            lines.append(f"  - Question: {paper.research_question}")
         lines.append("")
+
+    strong = [
+        edge for edge in lineage_edges
+        if edge.relation in {"direct_citation_continuation", "direct_citation_same_author"}
+    ]
+    if strong:
+        lines += ["", "## Strong research progression", ""]
+        for edge in strong[:50]:
+            names = ", ".join(edge.tracked_authors) or "tracked researcher"
+            lines.append(
+                f"- PMID {edge.source} → {edge.target} · {names} · "
+                f"score={edge.score:.2f} · {edge.progression or 'continuation'}"
+            )
 
     path.write_text("\n".join(lines), encoding="utf-8")
 
