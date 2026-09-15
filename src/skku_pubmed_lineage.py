@@ -18,6 +18,7 @@ import json
 import math
 import os
 import re
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -354,7 +355,6 @@ def build_edges(
     if include_citations:
         for idx, paper in enumerate(papers, 1):
             refs = client.links(paper.pmid, "pubmed_pubmed_refs")
-            cited_in = client.links(paper.pmid, "pubmed_pubmed_citedin")
 
             for older_id in refs & paper_ids:
                 if older_id == paper.pmid:
@@ -366,18 +366,6 @@ def build_edges(
                     relation="citation",
                     weight=1.0,
                     evidence=f"{paper.pmid} cites {older_id}",
-                )
-
-            for newer_id in cited_in & paper_ids:
-                if newer_id == paper.pmid:
-                    continue
-                key = (paper.pmid, newer_id, "citation")
-                edges[key] = Edge(
-                    source=paper.pmid,
-                    target=newer_id,
-                    relation="citation",
-                    weight=1.0,
-                    evidence=f"{newer_id} cites {paper.pmid}",
                 )
 
             if idx % 25 == 0:
