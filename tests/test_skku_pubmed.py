@@ -194,6 +194,25 @@ class TestAuthorContinuation(unittest.TestCase):
         self.assertEqual(len(registry[0].seed_pmids), 3)
         self.assertEqual(registry[1].name, "Alpha Researcher")
 
+    def test_balanced_citation_sampling_covers_multiple_researchers(self):
+        papers = {}
+        paper_authors = {}
+        for idx in range(1, 7):
+            paper = parsed_paper()
+            paper.pmid = str(100 + idx)
+            paper.year = 2020 + idx
+            papers[paper.pmid] = paper
+            paper_authors[paper.pmid] = {"orcid:a" if idx <= 3 else "orcid:b"}
+
+        selected = followup.select_citation_check_pmids(
+            papers,
+            paper_authors,
+            max_citation_checks=4,
+        )
+        self.assertEqual(len(selected), 4)
+        selected_authors = set().union(*(paper_authors[x] for x in selected))
+        self.assertEqual(selected_authors, {"orcid:a", "orcid:b"})
+
     def test_orcid_author_query_uses_auid(self):
         tracked = followup.TrackedAuthor(
             key="orcid:0000-0001-2345-6789",
@@ -351,6 +370,43 @@ class TestResearchProfileAnnotation(unittest.TestCase):
         self.assertEqual(ann.research_stage, "causal inference")
         self.assertIn("causal relationship", ann.research_question)
 
+
+    def test_perovskite_solar_cell_uses_engineering_taxonomy(self):
+        paper = parsed_paper()
+        paper.pmid = "9100"
+        paper.title = "High-efficiency perovskite solar cell with improved interface"
+        paper.abstract = (
+            "We fabricated a thin-film photovoltaic device and measured power "
+            "conversion efficiency, photoluminescence, and current-voltage response."
+        )
+        paper.mesh_terms = []
+        paper.keywords = ["perovskite", "solar cell", "photovoltaic"]
+
+        ann = followup.annotate_paper(paper)
+
+        self.assertEqual(ann.primary_domain, "Energy / Photovoltaics")
+        self.assertIn("perovskite solar cells", ann.topic_terms)
+        self.assertEqual(ann.disease_terms, [])
+        self.assertIn("photovoltaic characterization", ann.methods)
+        self.assertNotIn("treatment outcome analysis", ann.methods)
+
+    def test_artificial_synapse_depression_not_psychiatric(self):
+        paper = parsed_paper()
+        paper.pmid = "9101"
+        paper.title = "Memristor artificial synapse with long-term depression"
+        paper.abstract = (
+            "A memristor device reproduces potentiation and long-term depression "
+            "for neuromorphic electronics using electrical characterization."
+        )
+        paper.mesh_terms = []
+        paper.keywords = ["memristor", "artificial synapse", "neuromorphic"]
+
+        ann = followup.annotate_paper(paper)
+
+        self.assertEqual(ann.primary_domain, "Materials Science")
+        self.assertIn("memristors / neuromorphic devices", ann.topic_terms)
+        self.assertNotIn("psychiatric disease", ann.disease_terms)
+        self.assertEqual(ann.disease_terms, [])
 
     def test_clinical_registry_biomarker_profile(self):
         paper = parsed_paper()
@@ -1061,6 +1117,39 @@ class TestPartitionedPubMedCrawl(unittest.TestCase):
 
 
 class TestSeedCorpusProfiles(unittest.TestCase):
+    def test_name_only_identity_splits_by_affiliation_fingerprint(self):
+        p1 = parsed_paper()
+        p1.pmid = "801"
+        p1.authors[0].orcid = ""
+        p1.authors[0].name = "Same Name"
+        p1.authors[0].initials = "SN"
+        p1.authors[0].affiliations = [
+            "Department of Chemical Engineering, Sungkyunkwan University, Suwon, Korea."
+        ]
+        p1.authors[0].is_skku = True
+
+        p2 = parsed_paper()
+        p2.pmid = "802"
+        p2.authors[0].orcid = ""
+        p2.authors[0].name = "Same Name"
+        p2.authors[0].initials = "SN"
+        p2.authors[0].affiliations = [
+            "Department of Neurology, Sungkyunkwan University, Seoul, Korea."
+        ]
+        p2.authors[0].is_skku = True
+
+        profiles, lineage_papers, summary = seed_profiles.build_seed_profiles([p1, p2])
+        same_name_profiles = [x for x in profiles if x.name == "Same Name"]
+
+        self.assertEqual(len(same_name_profiles), 2)
+        self.assertTrue(all("|aff:" in x.key for x in same_name_profiles))
+        self.assertTrue(all(x.confidence == "low_affiliation" for x in same_name_profiles))
+        self.assertGreaterEqual(summary["affiliation_disambiguated_name_profiles"], 2)
+        self.assertNotEqual(
+            lineage_papers[0]["tracked_author_keys"][0],
+            lineage_papers[1]["tracked_author_keys"][0],
+        )
+
     def test_name_only_record_merges_into_unique_orcid_identity(self):
         p1 = parsed_paper()
         p1.pmid = "100"
