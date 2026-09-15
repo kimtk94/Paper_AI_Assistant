@@ -8,9 +8,11 @@ by skku_pubmed_lineage.py.
 
 Identity policy:
 - High confidence: ORCID.
-- Medium confidence: a name-only record is mapped to an ORCID only when that exact
-  normalized name maps uniquely to one ORCID anywhere in the seed corpus.
-- Low confidence: remaining exact normalized full-name identity.
+- Medium confidence: a name-only record maps to a unique ORCID only when its
+  affiliation fingerprint is compatible with that ORCID's observed affiliations.
+- Low-affiliation confidence: remaining name-only records are split by a
+  conservative SKKU department/institute/hospital fingerprint instead of being
+  merged institution-wide by name alone.
 
 Outputs are shaped to be compatible with skku_pubmed_researcher_network.py.
 """
@@ -38,6 +40,8 @@ class SeedResearcherProfile:
     paper_count: int
     first_year: int
     last_year: int
+    top_domains: list[str]
+    top_topics: list[str]
     top_diseases: list[str]
     top_methods: list[str]
     top_data_types: list[str]
@@ -48,6 +52,43 @@ class SeedResearcherProfile:
 
 def norm_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def affiliation_fingerprint(author: Author) -> str:
+    """Return a conservative SKKU sub-affiliation fingerprint for name-only IDs."""
+    candidates = [
+        aff for aff in author.affiliations
+        if "sungkyunkwan" in aff.lower() or re.search(r"\bskku\b", aff, re.I)
+    ]
+    if not candidates:
+        return ""
+
+    hospital_anchors = (
+        "samsung medical center",
+        "kangbuk samsung hospital",
+        "samsung changwon hospital",
+    )
+    for aff in candidates:
+        low = re.sub(r"\s+", " ", aff.lower())
+        parts = []
+        for hospital in hospital_anchors:
+            if hospital in low:
+                parts.append(hospital.replace(" ", "_"))
+                break
+
+        match = re.search(
+            r"\b(department|division|school|college|institute|center|centre)\s+of\s+([^,;]{2,80})",
+            low,
+        )
+        if match:
+            unit = re.sub(r"[^a-z0-9]+", "_", match.group(2)).strip("_")
+            if unit:
+                parts.append(f"{match.group(1)}_{unit}")
+
+        if parts:
+            return "|".join(parts[:2])
+
+    return "skku_general"
 
 
 def load_seed_papers(path: Path) -> list[Paper]:
@@ -104,9 +145,16 @@ def load_seed_papers(path: Path) -> list[Paper]:
 
 
 def resolve_identity_map(papers: list[Paper]) -> dict[tuple[str, str], tuple[str, str]]:
-    """Return (pmid, normalized-name) -> (identity-key, confidence)."""
+    """Return (pmid, normalized-name) -> (identity-key, confidence).
+
+    ORCID remains authoritative. Name-only records are only attached to a unique
+    ORCID when affiliation evidence is compatible; otherwise they are split by a
+    conservative SKKU affiliation fingerprint.
+    """
     name_orcids: dict[str, set[str]] = defaultdict(set)
-    preferred_name: dict[str, str] = {}
+    name_orcid_fingerprints: dict[str, dict[str, set[str]]] = defaultdict(
+        lambda: defaultdict(set)
+    )
 
     for paper in papers:
         for author in paper.authors:
@@ -115,9 +163,11 @@ def resolve_identity_map(papers: list[Paper]) -> dict[tuple[str, str], tuple[str
             name_key = norm_name(author.name)
             if not name_key:
                 continue
-            preferred_name.setdefault(name_key, author.name)
             if author.orcid:
                 name_orcids[name_key].add(author.orcid)
+                fp = affiliation_fingerprint(author)
+                if fp:
+                    name_orcid_fingerprints[name_key][author.orcid].add(fp)
 
     unique_name_orcid = {
         name: next(iter(orcids))
@@ -133,15 +183,31 @@ def resolve_identity_map(papers: list[Paper]) -> dict[tuple[str, str], tuple[str
             name_key = norm_name(author.name)
             if not name_key:
                 continue
+
             if author.orcid:
-                identity[(paper.pmid, name_key)] = (f"orcid:{author.orcid}", "high")
-            elif name_key in unique_name_orcid:
                 identity[(paper.pmid, name_key)] = (
-                    f"orcid:{unique_name_orcid[name_key]}",
-                    "medium",
+                    f"orcid:{author.orcid}",
+                    "high",
                 )
-            else:
-                identity[(paper.pmid, name_key)] = (f"name:{name_key}", "low")
+                continue
+
+            fp = affiliation_fingerprint(author)
+            if name_key in unique_name_orcid:
+                orcid = unique_name_orcid[name_key]
+                known_fps = name_orcid_fingerprints[name_key].get(orcid, set())
+                if not fp or not known_fps or fp in known_fps:
+                    identity[(paper.pmid, name_key)] = (
+                        f"orcid:{orcid}",
+                        "medium",
+                    )
+                    continue
+
+            fp_key = fp or "unknown"
+            identity[(paper.pmid, name_key)] = (
+                f"name:{name_key}|aff:{fp_key}",
+                "low_affiliation" if fp else "low",
+            )
+
     return identity
 
 
@@ -193,6 +259,9 @@ def build_seed_profiles(
                 "tracked_author_keys": keys,
                 "current_affiliations": paper.skku_affiliation_evidence,
                 "skku_current": True,
+                "primary_domain": ann.primary_domain,
+                "research_domains": ann.research_domains,
+                "topic_terms": ann.topic_terms,
                 "disease_terms": ann.disease_terms,
                 "methods": ann.methods,
                 "data_types": ann.data_types,
@@ -208,6 +277,16 @@ def build_seed_profiles(
         ordered = sorted(
             (paper_by_id[pmid] for pmid in pmids),
             key=lambda p: (p.year or 9999, int(p.pmid) if p.pmid.isdigit() else 0),
+        )
+        domain_counts = Counter(
+            value
+            for paper in ordered
+            for value in annotations[paper.pmid].research_domains
+        )
+        topic_counts = Counter(
+            value
+            for paper in ordered
+            for value in annotations[paper.pmid].topic_terms
         )
         disease_counts = Counter(
             value
@@ -235,11 +314,15 @@ def build_seed_profiles(
             confidence = "high"
         elif "medium" in confidence_set:
             confidence = "medium"
+        elif "low_affiliation" in confidence_set:
+            confidence = "low_affiliation"
         else:
             confidence = "low"
 
         name = per_key_names[key].most_common(1)[0][0]
         years = [paper.year for paper in ordered if paper.year]
+        top_domains = [x for x, _ in domain_counts.most_common(6)]
+        top_topics = [x for x, _ in topic_counts.most_common(8)]
         top_diseases = [x for x, _ in disease_counts.most_common(6)]
         top_methods = [x for x, _ in method_counts.most_common(6)]
         top_data = [x for x, _ in data_counts.most_common(6)]
@@ -247,6 +330,10 @@ def build_seed_profiles(
         parts = []
         if years:
             parts.append(f"{min(years)}–{max(years)}")
+        if top_domains:
+            parts.append("domain: " + ", ".join(top_domains[:2]))
+        if top_topics:
+            parts.append("topics: " + ", ".join(top_topics[:2]))
         if stage_path:
             parts.append("stage: " + " → ".join(stage_path[:8]))
         if top_methods:
@@ -263,6 +350,8 @@ def build_seed_profiles(
                 paper_count=len(pmids),
                 first_year=min(years) if years else 0,
                 last_year=max(years) if years else 0,
+                top_domains=top_domains,
+                top_topics=top_topics,
                 top_diseases=top_diseases,
                 top_methods=top_methods,
                 top_data_types=top_data,
@@ -290,15 +379,35 @@ def build_seed_profiles(
     tracked_counts = [len(x["tracked_author_keys"]) for x in lineage_papers]
 
     summary = {
-        "profile_version": 2,
-        "author_affiliation_policy": "conservative_shared_block_initial_attribution",
+        "profile_version": 3,
+        "author_affiliation_policy": "conservative_shared_block_plus_affiliation_fingerprint_identity",
         "seed_papers": len(papers),
         "researchers": len(profiles),
         "orcid_researchers": sum(bool(x.orcid) for x in profiles),
         "name_only_researchers": sum(not x.orcid for x in profiles),
         "high_confidence": sum(x.confidence == "high" for x in profiles),
         "medium_confidence": sum(x.confidence == "medium" for x in profiles),
-        "low_confidence": sum(x.confidence == "low" for x in profiles),
+        "low_confidence": sum(x.confidence.startswith("low") for x in profiles),
+        "affiliation_disambiguated_name_profiles": sum(
+            x.key.startswith("name:") and "|aff:" in x.key and not x.key.endswith("|aff:unknown")
+            for x in profiles
+        ),
+        "ambiguous_names_with_multiple_orcids": sum(
+            len(orcids) >= 2
+            for orcids in (
+                {
+                    norm_name(author.name): {
+                        a.orcid
+                        for paper in papers
+                        for a in paper.authors
+                        if a.is_skku and norm_name(a.name) == norm_name(author.name) and a.orcid
+                    }
+                    for paper in papers
+                    for author in paper.authors
+                    if author.is_skku and norm_name(author.name)
+                }
+            ).values()
+        ),
         "papers_with_multiple_skku_researchers": sum(
             len(x["tracked_author_keys"]) >= 2 for x in lineage_papers
         ),
@@ -306,6 +415,9 @@ def build_seed_profiles(
         "max_tracked_researchers_per_paper": max(tracked_counts, default=0),
         "ambiguous_shared_affiliation_papers": ambiguous_papers,
         "affiliation_status_counts": dict(affiliation_status_counts),
+        "primary_domain_counts": dict(
+            Counter(annotations[p.pmid].primary_domain for p in papers)
+        ),
     }
     return profiles, lineage_papers, summary
 
@@ -348,7 +460,7 @@ def main() -> int:
     profile_rows = []
     for item in profiles:
         row = asdict(item)
-        for key in ["top_diseases", "top_methods", "top_data_types", "stage_path"]:
+        for key in ["top_domains", "top_topics", "top_diseases", "top_methods", "top_data_types", "stage_path"]:
             row[key] = "; ".join(row[key])
         profile_rows.append(row)
     write_csv(out / "researcher_summary.csv", profile_rows)
@@ -358,7 +470,7 @@ def main() -> int:
         row = dict(item)
         for key in [
             "tracked_authors", "tracked_author_keys", "current_affiliations",
-            "disease_terms", "methods", "data_types",
+            "research_domains", "topic_terms", "disease_terms", "methods", "data_types",
         ]:
             row[key] = "; ".join(row[key])
         paper_rows.append(row)
