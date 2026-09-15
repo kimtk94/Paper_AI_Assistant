@@ -432,7 +432,8 @@ def search_partitioned_pubmed(
         else:
             print("[resume] checkpoint spec differs; starting a new crawl", file=sys.stderr)
 
-    total_hits = 0
+    overall_query = build_query(start_year, end_year, topic, extra)
+    total_hits, _ = client.search_page(overall_query, retstart=0, retmax=0)
 
     def persist() -> None:
         if checkpoint_path is None:
@@ -537,11 +538,9 @@ def search_partitioned_pubmed(
         year_label = f"{year}"
         if year_label in completed_labels:
             prior = next(x for x in completed_windows if x.get("label") == year_label)
-            total_hits += int(prior.get("pubmed_hits", 0) or 0)
             continue
 
         year_count, _ = client.search_page(year_query, retstart=0, retmax=0)
-        total_hits += year_count
         print(f"[crawl] year={year} hits={year_count:,}", file=sys.stderr)
 
         if year_count <= 10000:
