@@ -27,6 +27,8 @@ class ResearcherNode:
     paper_count: int
     first_year: int
     last_year: int
+    top_domains: list[str]
+    top_topics: list[str]
     top_diseases: list[str]
     top_methods: list[str]
     top_data_types: list[str]
@@ -47,6 +49,8 @@ class ResearcherEdge:
     max_team_size: int
     direct_citations: int
     topic_similarity: float
+    shared_domains: list[str]
+    shared_topics: list[str]
     shared_diseases: list[str]
     shared_methods: list[str]
     shared_data_types: list[str]
@@ -69,21 +73,37 @@ def jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(union)
 
 
-def profile_similarity(a: ResearcherNode, b: ResearcherNode) -> tuple[float, list[str], list[str], list[str]]:
+def profile_similarity(
+    a: ResearcherNode,
+    b: ResearcherNode,
+) -> tuple[float, list[str], list[str], list[str], list[str], list[str]]:
+    domain_a, domain_b = set(a.top_domains), set(b.top_domains)
+    topic_a, topic_b = set(a.top_topics), set(b.top_topics)
     disease_a, disease_b = set(a.top_diseases), set(b.top_diseases)
     method_a, method_b = set(a.top_methods), set(b.top_methods)
     data_a, data_b = set(a.top_data_types), set(b.top_data_types)
 
+    shared_domains = sorted(domain_a & domain_b)
+    shared_topics = sorted(topic_a & topic_b)
     shared_disease = sorted(disease_a & disease_b)
     shared_methods = sorted(method_a & method_b)
     shared_data = sorted(data_a & data_b)
 
     score = (
-        0.40 * jaccard(disease_a, disease_b)
-        + 0.35 * jaccard(method_a, method_b)
-        + 0.25 * jaccard(data_a, data_b)
+        0.30 * jaccard(domain_a, domain_b)
+        + 0.20 * jaccard(topic_a, topic_b)
+        + 0.20 * jaccard(disease_a, disease_b)
+        + 0.20 * jaccard(method_a, method_b)
+        + 0.10 * jaccard(data_a, data_b)
     )
-    return round(score, 4), shared_disease, shared_methods, shared_data
+    return (
+        round(score, 4),
+        shared_domains,
+        shared_topics,
+        shared_disease,
+        shared_methods,
+        shared_data,
+    )
 
 
 def build_nodes(researchers: list[dict]) -> list[ResearcherNode]:
@@ -97,6 +117,8 @@ def build_nodes(researchers: list[dict]) -> list[ResearcherNode]:
                 paper_count=int(row.get("paper_count", 0) or 0),
                 first_year=int(row.get("first_year", 0) or 0),
                 last_year=int(row.get("last_year", 0) or 0),
+                top_domains=list(row.get("top_domains", []) or []),
+                top_topics=list(row.get("top_topics", []) or []),
                 top_diseases=list(row.get("top_diseases", []) or []),
                 top_methods=list(row.get("top_methods", []) or []),
                 top_data_types=list(row.get("top_data_types", []) or []),
@@ -199,7 +221,14 @@ def build_researcher_network(
             default=0,
         )
         citations = citation_counts.get(pair, 0)
-        similarity, shared_disease, shared_methods, shared_data = profile_similarity(a, b)
+        (
+            similarity,
+            shared_domains,
+            shared_topics,
+            shared_disease,
+            shared_methods,
+            shared_data,
+        ) = profile_similarity(a, b)
 
         if not shared_pmids and citations == 0 and (
             not include_thematic or similarity < topic_threshold
@@ -239,6 +268,10 @@ def build_researcher_network(
                 f"cross-researcher citations={citations}"
                 + (f" ({', '.join(examples[:5])})" if examples else "")
             )
+        if shared_domains:
+            evidence_parts.append("shared domain=" + ", ".join(shared_domains[:3]))
+        if shared_topics:
+            evidence_parts.append("shared topic=" + ", ".join(shared_topics[:4]))
         if shared_disease:
             evidence_parts.append("shared disease=" + ", ".join(shared_disease[:4]))
         if shared_methods:
@@ -260,6 +293,8 @@ def build_researcher_network(
                 max_team_size=max_team_size,
                 direct_citations=citations,
                 topic_similarity=similarity,
+                shared_domains=shared_domains,
+                shared_topics=shared_topics,
                 shared_diseases=shared_disease,
                 shared_methods=shared_methods,
                 shared_data_types=shared_data,
@@ -299,6 +334,8 @@ def render_html(path: Path, nodes: list[ResearcherNode], edges: list[ResearcherE
             f"Papers: {item.paper_count}<br>"
             f"Years: {item.first_year or '?'}–{item.last_year or '?'}<br>"
             f"Strong lineage: {item.strong_lineage_count}<br>"
+            f"Domain: {', '.join(item.top_domains[:3]) or '-'}<br>"
+            f"Topics: {', '.join(item.top_topics[:4]) or '-'}<br>"
             f"Disease: {', '.join(item.top_diseases[:4]) or '-'}<br>"
             f"Methods: {', '.join(item.top_methods[:4]) or '-'}<br>"
             f"Data: {', '.join(item.top_data_types[:4]) or '-'}<br>"
@@ -450,13 +487,13 @@ def main() -> int:
     node_rows = []
     for item in nodes:
         row = asdict(item)
-        for key in ["top_diseases", "top_methods", "top_data_types", "stage_path"]:
+        for key in ["top_domains", "top_topics", "top_diseases", "top_methods", "top_data_types", "stage_path"]:
             row[key] = "; ".join(row[key])
         node_rows.append(row)
     edge_rows = []
     for item in edges:
         row = asdict(item)
-        for key in ["shared_diseases", "shared_methods", "shared_data_types"]:
+        for key in ["shared_domains", "shared_topics", "shared_diseases", "shared_methods", "shared_data_types"]:
             row[key] = "; ".join(row[key])
         edge_rows.append(row)
 
@@ -474,7 +511,7 @@ def main() -> int:
         for paper in papers
     ]
     summary = {
-        "network_version": 2,
+        "network_version": 3,
         "researchers": len(nodes),
         "network_edges": len(edges),
         "collaboration_citation": sum(e.relation == "collaboration+citation" for e in edges),
