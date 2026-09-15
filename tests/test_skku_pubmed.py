@@ -407,5 +407,60 @@ class TestResearchProfileAnnotation(unittest.TestCase):
         self.assertIn("single-cell RNA-seq", lineage_edges[0].progression)
 
 
+
+class TestResearchAnnotation(unittest.TestCase):
+    def test_gwas_stroke_profile(self):
+        paper = parsed_paper()
+        paper.pmid = "9001"
+        paper.title = "Genome-wide association study of ischemic stroke"
+        paper.abstract = "We identify genetic variants associated with ischemic stroke risk."
+        paper.mesh_terms = ["Stroke", "Genome-Wide Association Study"]
+        paper.keywords = ["GWAS", "genetic association"]
+
+        ann = followup.annotate_paper(paper)
+        self.assertIn("stroke", ann.disease_terms)
+        self.assertIn("GWAS", ann.methods)
+        self.assertIn("genomics", ann.data_types)
+        self.assertEqual(ann.research_stage, "discovery/association")
+        self.assertTrue(ann.research_question)
+
+    def test_single_cell_rna_is_not_mislabeled_as_bulk(self):
+        paper = parsed_paper()
+        paper.pmid = "9002"
+        paper.title = "Single-cell RNA-seq reveals immune cell states in cancer"
+        paper.abstract = "Single-cell RNA-seq was used to characterize tumor immune populations."
+        paper.mesh_terms = ["Neoplasms"]
+        paper.keywords = ["single-cell RNA-seq"]
+
+        ann = followup.annotate_paper(paper)
+        self.assertIn("single-cell RNA-seq", ann.methods)
+        self.assertNotIn("bulk RNA-seq", ann.methods)
+        self.assertIn("single-cell", ann.data_types)
+        self.assertIn("transcriptomics", ann.data_types)
+
+    def test_progression_summary_detects_method_and_stage_change(self):
+        p1 = parsed_paper()
+        p1.pmid = "9003"
+        p1.title = "Genome-wide association study of stroke"
+        p1.abstract = "We identify variants associated with stroke."
+        p1.mesh_terms = ["Stroke"]
+        p1.keywords = ["GWAS"]
+
+        p2 = parsed_paper()
+        p2.pmid = "9004"
+        p2.title = "Mendelian randomization of genetic risk factors for stroke"
+        p2.abstract = "Mendelian randomization was used for causal inference."
+        p2.mesh_terms = ["Stroke"]
+        p2.keywords = ["Mendelian randomization"]
+
+        a1 = followup.annotate_paper(p1)
+        a2 = followup.annotate_paper(p2)
+        progression = followup.progression_summary(a1, a2)
+
+        self.assertIn("stage:", progression)
+        self.assertIn("Mendelian randomization", progression)
+        self.assertEqual(a2.research_stage, "causal inference")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
