@@ -265,7 +265,22 @@ jobs:
           assert (root / "paper_annotations.json").exists()
           assert (root / "lineage_edges.csv").exists()
           assert (root / "lineage_edges.json").exists()
+          assert (root / "researcher_summary.csv").exists()
+          assert (root / "researcher_summary.json").exists()
+          assert (root / "research_trajectory.html").exists()
           assert (root / "continuation.md").exists()
+
+          trajectories = json.loads(
+              (root / "researcher_summary.json").read_text(encoding="utf-8")
+          )
+          assert summary["researcher_trajectories"] == len(trajectories), summary
+          assert summary["researcher_trajectories"] >= 1, summary
+          assert trajectories[0]["paper_count"] >= 2, trajectories[0]
+          assert trajectories[0]["stage_path"], trajectories[0]
+
+          trajectory_html = (root / "research_trajectory.html").read_text(encoding="utf-8")
+          assert "vis-network" in trajectory_html
+          assert selection["name"] in trajectory_html
 
           expected = selection["expected_direct_citation"]
           matching = [
@@ -295,6 +310,7 @@ jobs:
               "with_disease": summary["papers_with_disease_terms"],
               "stages": summary["research_stages"],
           })
+          print("Researcher trajectory:", trajectories[0])
           print("Matched PMIDs:", [p["pmid"] for p in papers])
           PY
 
