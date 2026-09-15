@@ -347,6 +347,101 @@ jobs:
           print("Top network edges:", edges[:5])
           PY
 
+      - name: Discover live multi-researcher SKKU seed
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          papers = json.loads(
+              Path("/tmp/skku_pubmed_lineage/papers.json").read_text(encoding="utf-8")
+          )
+
+          selected = None
+          for paper in papers:
+              authors = []
+              seen = set()
+              for author in paper.get("authors", []):
+                  orcid = (author.get("orcid") or "").replace("https://orcid.org/", "").strip()
+                  if not author.get("is_skku") or not orcid or orcid in seen:
+                      continue
+                  seen.add(orcid)
+                  authors.append(author)
+              if len(authors) >= 2:
+                  selected = (paper, authors[:2])
+                  break
+
+          assert selected is not None, (
+              "No live SKKU paper with >=2 ORCID-tagged SKKU authors was found "
+              "in the current PubMed smoke sample."
+          )
+
+          paper, authors = selected
+          seed = dict(paper)
+          seed["authors"] = authors
+          seed["skku_authors"] = [a["name"] for a in authors]
+          seed["skku_orcids"] = [
+              (a.get("orcid") or "").replace("https://orcid.org/", "").strip()
+              for a in authors
+          ]
+          seed["skku_affiliation_evidence"] = [
+              f'{a["name"]}: {aff}'
+              for a in authors
+              for aff in a.get("affiliations", [])
+              if "sungkyunkwan" in aff.lower() or "skku" in aff.lower()
+          ]
+
+          Path("/tmp/skku_multi_seed.json").write_text(
+              json.dumps([seed], ensure_ascii=False, indent=2),
+              encoding="utf-8",
+          )
+          print("Multi-researcher seed:", {
+              "pmid": paper["pmid"],
+              "authors": seed["skku_authors"],
+              "orcids": seed["skku_orcids"],
+          })
+          PY
+
+      - name: Live multi-researcher network must contain collaboration edge
+        run: |
+          python src/skku_pubmed_author_followup.py \
+            --seed-json /tmp/skku_multi_seed.json \
+            --start-year 2000 \
+            --end-year 2026 \
+            --max-authors 2 \
+            --max-per-author 10 \
+            --output-dir /tmp/skku_multi_followup
+
+          python src/skku_pubmed_researcher_network.py \
+            --input-dir /tmp/skku_multi_followup \
+            --topic-threshold 0.30
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("/tmp/skku_multi_followup")
+          summary = json.loads(
+              (root / "researcher_network_summary.json").read_text(encoding="utf-8")
+          )
+          edges = json.loads(
+              (root / "researcher_network_edges.json").read_text(encoding="utf-8")
+          )
+
+          assert summary["researchers"] == 2, summary
+          collaboration_edges = [
+              e for e in edges
+              if e["relation"] in {"collaboration", "collaboration+citation"}
+              and e["shared_papers"] >= 1
+          ]
+          assert collaboration_edges, {
+              "summary": summary,
+              "edges": edges,
+          }
+          print("Live multi-researcher network:", summary)
+          print("Collaboration edge:", collaboration_edges[0])
+          PY
+
       - name: Upload smoke outputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -357,4 +452,6 @@ jobs:
             /tmp/skku_pubmed_followup
             /tmp/skku_orcid_seed.json
             /tmp/skku_orcid_selection.json
+            /tmp/skku_multi_seed.json
+            /tmp/skku_multi_followup
           if-no-files-found: warn
