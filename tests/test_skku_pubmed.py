@@ -305,6 +305,29 @@ class TestResearchProfileAnnotation(unittest.TestCase):
         self.assertEqual(ann.research_stage, "causal inference")
         self.assertIn("causal relationship", ann.research_question)
 
+
+    def test_clinical_registry_biomarker_profile(self):
+        paper = parsed_paper()
+        paper.title = (
+            "Evaluation of the Correlation of Calprotectin and SES-CD Score "
+            "in Pediatric Crohn's Disease"
+        )
+        paper.abstract = (
+            "This multicenter registry-based inception cohort evaluated serum "
+            "calprotectin and endoscopic SES-CD correlation during treatment."
+        )
+        paper.mesh_terms = ["Crohn Disease", "Cohort Studies"]
+        paper.keywords = ["calprotectin", "endoscopy", "registry"]
+
+        ann = followup.annotate_paper(paper)
+
+        self.assertIn("correlation analysis", ann.methods)
+        self.assertIn("registry/inception cohort", ann.methods)
+        self.assertIn("endoscopic assessment", ann.methods)
+        self.assertIn("laboratory biomarker", ann.data_types)
+        self.assertIn("endoscopy", ann.data_types)
+        self.assertIn("clinical registry/cohort", ann.data_types)
+
     def test_progression_detects_method_and_data_shift(self):
         source = followup.PaperAnnotation(
             pmid="100",
