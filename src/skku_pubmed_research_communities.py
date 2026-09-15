@@ -55,6 +55,8 @@ class ResearchCommunity:
     total_papers: int
     first_year: int
     last_year: int
+    top_domains: list[str]
+    top_topics: list[str]
     top_diseases: list[str]
     top_methods: list[str]
     top_data_types: list[str]
@@ -253,19 +255,39 @@ def _counter_top(values: list[list[str]], n: int = 6) -> list[str]:
 
 
 def _community_label(
+    domains: list[str],
+    topics: list[str],
     diseases: list[str],
     methods: list[str],
     data_types: list[str],
     community_id: str,
 ) -> str:
     pieces = []
-    if diseases:
-        pieces.append(diseases[0])
-    if methods:
-        pieces.append(methods[0])
-    elif data_types:
-        pieces.append(data_types[0])
-    return " / ".join(pieces) if pieces else f"Research community {community_id}"
+    if domains:
+        pieces.append(domains[0])
+
+    nonclinical = domains and domains[0] in {
+        "Energy / Photovoltaics",
+        "Materials Science",
+        "Chemical Engineering",
+        "Chemistry",
+    }
+    if nonclinical:
+        if topics:
+            pieces.append(topics[0])
+        elif methods:
+            pieces.append(methods[0])
+    else:
+        if diseases:
+            pieces.append(diseases[0])
+        elif topics:
+            pieces.append(topics[0])
+        if methods:
+            pieces.append(methods[0])
+        elif data_types and len(pieces) < 2:
+            pieces.append(data_types[0])
+
+    return " / ".join(pieces[:3]) if pieces else f"Research community {community_id}"
 
 
 def build_research_communities(
@@ -334,6 +356,8 @@ def build_research_communities(
     for raw, keys in ordered_groups:
         cid = compact_id[raw]
         group_nodes = [node_map[key] for key in sorted(keys)]
+        domains = _counter_top([list(x.get("top_domains", []) or []) for x in group_nodes])
+        topics = _counter_top([list(x.get("top_topics", []) or []) for x in group_nodes], n=8)
         diseases = _counter_top([list(x.get("top_diseases", []) or []) for x in group_nodes])
         methods = _counter_top([list(x.get("top_methods", []) or []) for x in group_nodes])
         data_types = _counter_top([list(x.get("top_data_types", []) or []) for x in group_nodes])
@@ -363,13 +387,17 @@ def build_research_communities(
         internal = internal_edges_by_community.get(cid, [])
         internal_weight = round(sum(_edge_weight(edge) for edge in internal), 4)
         strong_count = sum(_edge_weight(edge) >= strong_edge_score for edge in internal)
-        label = _community_label(diseases, methods, data_types, cid)
+        label = _community_label(domains, topics, diseases, methods, data_types, cid)
 
         evidence_parts = [
             f"researchers={len(group_nodes)}",
             f"internal edges={len(internal)}",
             f"strong edges={strong_count}",
         ]
+        if domains:
+            evidence_parts.append("domain=" + ", ".join(domains[:3]))
+        if topics:
+            evidence_parts.append("topic=" + ", ".join(topics[:4]))
         if diseases:
             evidence_parts.append("disease=" + ", ".join(diseases[:3]))
         if methods:
@@ -388,6 +416,8 @@ def build_research_communities(
                 total_papers=sum(int(x.get("paper_count", 0) or 0) for x in group_nodes),
                 first_year=min(years_first) if years_first else 0,
                 last_year=max(years_last) if years_last else 0,
+                top_domains=domains,
+                top_topics=topics,
                 top_diseases=diseases,
                 top_methods=methods,
                 top_data_types=data_types,
@@ -457,6 +487,8 @@ def render_html(
             f"Researchers: {item.researcher_count}<br>"
             f"Hub researcher: {item.hub_researcher}<br>"
             f"Years: {item.first_year or '?'}–{item.last_year or '?'}<br>"
+            f"Domain: {', '.join(item.top_domains[:4]) or '-'}<br>"
+            f"Topics: {', '.join(item.top_topics[:5]) or '-'}<br>"
             f"Disease: {', '.join(item.top_diseases[:5]) or '-'}<br>"
             f"Methods: {', '.join(item.top_methods[:5]) or '-'}<br>"
             f"Data: {', '.join(item.top_data_types[:5]) or '-'}<br>"
@@ -578,7 +610,7 @@ def main() -> int:
     community_rows = []
     for item in communities:
         row = asdict(item)
-        for key in ["researchers", "top_diseases", "top_methods", "top_data_types", "stage_path"]:
+        for key in ["researchers", "top_domains", "top_topics", "top_diseases", "top_methods", "top_data_types", "stage_path"]:
             row[key] = "; ".join(row[key])
         community_rows.append(row)
     write_csv(output_dir / "research_communities.csv", community_rows)
@@ -588,7 +620,7 @@ def main() -> int:
 
     largest_size = max((x.researcher_count for x in communities), default=0)
     summary = {
-        "community_version": 2,
+        "community_version": 3,
         "algorithm": args.algorithm,
         "resolution": args.resolution,
         "seed": args.seed,
@@ -607,6 +639,13 @@ def main() -> int:
         ),
         "min_edge_score": args.min_edge_score,
         "strong_edge_score": args.strong_edge_score,
+        "top_domain_counts": dict(
+            Counter(
+                community.top_domains[0]
+                for community in communities
+                if community.top_domains
+            )
+        ),
     }
     (output_dir / "research_community_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2),
