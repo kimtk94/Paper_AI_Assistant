@@ -40,6 +40,7 @@ jobs:
         run: |
           python -m py_compile \
             src/skku_pubmed_lineage.py \
+            src/skku_pubmed_annotation.py \
             src/skku_pubmed_author_followup.py
 
       - name: Run deterministic unit tests
@@ -239,6 +240,7 @@ jobs:
           )
           papers = json.loads((root / "lineage_papers.json").read_text(encoding="utf-8"))
           lineage_edges = json.loads((root / "lineage_edges.json").read_text(encoding="utf-8"))
+          annotations = json.loads((root / "paper_annotations.json").read_text(encoding="utf-8"))
 
           assert summary["tracked_researchers"] == 1, summary
           assert summary["high_confidence_orcid"] == 1, summary
@@ -246,6 +248,12 @@ jobs:
           assert len(papers) >= 2, papers
           assert all(selection["name"] in p["tracked_authors"] for p in papers), papers
           assert summary["strong_direct_lineage"] >= 1, summary
+          assert summary["annotated_papers"] == summary["unique_followed_papers"], summary
+          assert len(annotations) == len(papers), (len(annotations), len(papers))
+          assert all(a["research_stage"] for a in annotations), annotations
+          assert all(a["research_question"] for a in annotations), annotations
+          assert (root / "paper_annotations.csv").exists()
+          assert (root / "paper_annotations.json").exists()
           assert (root / "lineage_edges.csv").exists()
           assert (root / "lineage_edges.json").exists()
           assert (root / "continuation.md").exists()
@@ -264,10 +272,20 @@ jobs:
               "expected": expected,
               "lineage_edges": lineage_edges,
           }
+          assert matching[0]["source_stage"], matching[0]
+          assert matching[0]["target_stage"], matching[0]
+          assert matching[0]["progression"], matching[0]
 
           print("Live ORCID selection:", selection)
           print("Continuation output validation:", summary)
           print("Strong lineage match:", matching[0])
+          print("Annotation coverage:", {
+              "annotated": summary["annotated_papers"],
+              "with_methods": summary["papers_with_methods"],
+              "with_data": summary["papers_with_data_types"],
+              "with_disease": summary["papers_with_disease_terms"],
+              "stages": summary["research_stages"],
+          })
           print("Matched PMIDs:", [p["pmid"] for p in papers])
           PY
 
