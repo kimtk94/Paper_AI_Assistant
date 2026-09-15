@@ -155,17 +155,33 @@ jobs:
               if orcid in checked:
                   continue
               checked.add(orcid)
+              if len(checked) > 12:
+                  break
+
               query = f'"orcid {orcid}"[auid] AND 2000:2026[dp]'
               count, ids = client.search(query, 10)
-              if count >= 2 and len(ids) >= 2:
-                  selected = (paper, author, orcid, count, ids)
+              if count < 2 or len(ids) < 2:
+                  continue
+
+              idset = set(ids)
+              citation_pair = None
+              for newer in ids:
+                  refs = client.links(newer, "pubmed_pubmed_refs")
+                  older_hits = sorted(refs & idset)
+                  if older_hits:
+                      citation_pair = (older_hits[0], newer)
+                      break
+
+              if citation_pair:
+                  selected = (paper, author, orcid, count, ids, citation_pair)
                   break
 
           assert selected is not None, (
-              f"Checked {len(checked)} real SKKU ORCIDs but none had >=2 PubMed papers."
+              f"Checked {len(checked)} real SKKU ORCIDs but none had an internal "
+              "direct citation among the first 10 PubMed papers."
           )
 
-          paper, author, orcid, count, ids = selected
+          paper, author, orcid, count, ids, citation_pair = selected
 
           # Build a one-author seed so the follow-up stage must track exactly
           # the ORCID that passed the live PubMed [auid] search above.
@@ -188,6 +204,10 @@ jobs:
               "seed_pmid": paper["pmid"],
               "pubmed_count": count,
               "sample_pmids": ids[:5],
+              "expected_direct_citation": {
+                  "source": citation_pair[0],
+                  "target": citation_pair[1],
+              },
           }
           Path("/tmp/skku_orcid_selection.json").write_text(
               json.dumps(selection, ensure_ascii=False, indent=2),
@@ -204,6 +224,8 @@ jobs:
             --end-year 2026 \
             --max-authors 1 \
             --max-per-author 10 \
+            --with-citations \
+            --max-citation-checks 10 \
             --output-dir /tmp/skku_pubmed_followup
 
           python - <<'PY'
@@ -216,16 +238,36 @@ jobs:
               Path("/tmp/skku_orcid_selection.json").read_text(encoding="utf-8")
           )
           papers = json.loads((root / "lineage_papers.json").read_text(encoding="utf-8"))
+          lineage_edges = json.loads((root / "lineage_edges.json").read_text(encoding="utf-8"))
 
           assert summary["tracked_researchers"] == 1, summary
           assert summary["high_confidence_orcid"] == 1, summary
           assert summary["unique_followed_papers"] >= 2, summary
           assert len(papers) >= 2, papers
           assert all(selection["name"] in p["tracked_authors"] for p in papers), papers
+          assert summary["strong_direct_lineage"] >= 1, summary
+          assert (root / "lineage_edges.csv").exists()
+          assert (root / "lineage_edges.json").exists()
           assert (root / "continuation.md").exists()
+
+          expected = selection["expected_direct_citation"]
+          matching = [
+              e for e in lineage_edges
+              if e["source"] == expected["source"]
+              and e["target"] == expected["target"]
+              and e["relation"] in {
+                  "direct_citation_continuation",
+                  "direct_citation_same_author",
+              }
+          ]
+          assert matching, {
+              "expected": expected,
+              "lineage_edges": lineage_edges,
+          }
 
           print("Live ORCID selection:", selection)
           print("Continuation output validation:", summary)
+          print("Strong lineage match:", matching[0])
           print("Matched PMIDs:", [p["pmid"] for p in papers])
           PY
 
