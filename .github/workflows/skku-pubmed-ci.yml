@@ -1,0 +1,154 @@
+name: SKKU PubMed CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/skku_pubmed_*.py"
+      - "tests/test_skku_pubmed.py"
+      - "notebooks/SKKU_PubMed_Lineage.ipynb"
+      - ".github/workflows/skku-pubmed-ci.yml"
+  pull_request:
+    paths:
+      - "src/skku_pubmed_*.py"
+      - "tests/test_skku_pubmed.py"
+      - "notebooks/SKKU_PubMed_Lineage.ipynb"
+      - ".github/workflows/skku-pubmed-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Unit / Python \${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: \${{ matrix.python-version }}
+
+      - name: Compile scripts
+        run: |
+          python -m py_compile \
+            src/skku_pubmed_lineage.py \
+            src/skku_pubmed_author_followup.py
+
+      - name: Run deterministic unit tests
+        run: python -m unittest discover -s tests -p "test_skku_pubmed.py" -v
+
+      - name: Validate one-cell notebook structure
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("notebooks/SKKU_PubMed_Lineage.ipynb")
+          nb = json.loads(path.read_text(encoding="utf-8"))
+          code_cells = [c for c in nb.get("cells", []) if c.get("cell_type") == "code"]
+          assert len(nb.get("cells", [])) == 1, f"expected exactly 1 cell, got {len(nb.get('cells', []))}"
+          assert len(code_cells) == 1, f"expected exactly 1 code cell, got {len(code_cells)}"
+          source = "".join(code_cells[0].get("source", []))
+          compile(source, str(path), "exec")
+          print("one-cell notebook: OK")
+          PY
+
+  pubmed-smoke:
+    name: Live PubMed smoke
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NCBI_EMAIL: github-actions-bot@users.noreply.github.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Live PubMed affiliation search and fetch
+        shell: bash
+        run: |
+          set -euo pipefail
+          ok=0
+          for attempt in 1 2 3; do
+            echo "PubMed smoke attempt \${attempt}/3"
+            if python src/skku_pubmed_lineage.py \
+              --start-year 2025 \
+              --end-year 2026 \
+              --max-results 3 \
+              --skip-citations \
+              --topic-threshold 0.30 \
+              --output-dir /tmp/skku_pubmed_lineage; then
+              ok=1
+              break
+            fi
+            sleep $((attempt * 5))
+          done
+          test "$ok" -eq 1
+
+      - name: Validate PubMed outputs
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("/tmp/skku_pubmed_lineage")
+          required = [
+              "query.txt", "papers.json", "edges.json",
+              "papers.csv", "edges.csv", "lineage.md",
+              "lineage.html", "summary.json",
+          ]
+          for name in required:
+              path = root / name
+              assert path.exists(), f"missing output: {path}"
+
+          papers = json.loads((root / "papers.json").read_text(encoding="utf-8"))
+          summary = json.loads((root / "summary.json").read_text(encoding="utf-8"))
+          assert summary["pubmed_total_hits"] >= len(papers)
+          assert summary["verified_papers"] == len(papers)
+          print("PubMed output validation:", summary)
+          PY
+
+      - name: Smoke-test ORCID continuation stage
+        run: |
+          python src/skku_pubmed_author_followup.py \
+            --seed-json /tmp/skku_pubmed_lineage/papers.json \
+            --start-year 2024 \
+            --end-year 2026 \
+            --max-authors 3 \
+            --max-per-author 5 \
+            --output-dir /tmp/skku_pubmed_followup
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("/tmp/skku_pubmed_followup")
+          summary = json.loads((root / "summary.json").read_text(encoding="utf-8"))
+          assert "tracked_researchers" in summary
+          assert (root / "continuation.md").exists()
+          assert (root / "lineage_papers.json").exists()
+          print("Continuation output validation:", summary)
+          PY
+
+      - name: Upload smoke outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skku-pubmed-smoke-output
+          path: |
+            /tmp/skku_pubmed_lineage
+            /tmp/skku_pubmed_followup
+          if-no-files-found: warn
