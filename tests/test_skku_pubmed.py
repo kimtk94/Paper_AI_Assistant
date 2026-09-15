@@ -11,6 +11,7 @@ sys.path.insert(0, str(SRC))
 
 import skku_pubmed_lineage as lineage
 import skku_pubmed_author_followup as followup
+import skku_pubmed_researcher_network as researcher_network
 
 
 PUBMED_XML = """<PubmedArticle>
@@ -566,6 +567,108 @@ class TestResearcherTrajectory(unittest.TestCase):
         self.assertIn("Tae Hoon Kim", html)
         self.assertIn("direct_citation_continuation", html)
         self.assertIn("strong citation lineage only", html)
+
+
+
+class TestResearcherNetwork(unittest.TestCase):
+    def test_collaboration_and_topic_overlap_are_combined(self):
+        researchers = [
+            {
+                "key": "orcid:a",
+                "name": "Researcher A",
+                "orcid": "a",
+                "paper_count": 4,
+                "first_year": 2020,
+                "last_year": 2025,
+                "top_diseases": ["stroke"],
+                "top_methods": ["GWAS", "Mendelian randomization"],
+                "top_data_types": ["genomics"],
+                "stage_path": ["discovery/association", "causal inference"],
+                "strong_lineage_count": 1,
+            },
+            {
+                "key": "orcid:b",
+                "name": "Researcher B",
+                "orcid": "b",
+                "paper_count": 3,
+                "first_year": 2021,
+                "last_year": 2026,
+                "top_diseases": ["stroke"],
+                "top_methods": ["GWAS"],
+                "top_data_types": ["genomics"],
+                "stage_path": ["discovery/association"],
+                "strong_lineage_count": 0,
+            },
+        ]
+        papers = [
+            {
+                "pmid": "100",
+                "tracked_author_keys": ["orcid:a", "orcid:b"],
+                "tracked_authors": ["Researcher A", "Researcher B"],
+            }
+        ]
+        lineage_edges = []
+
+        nodes, edges = researcher_network.build_researcher_network(
+            researchers, papers, lineage_edges, topic_threshold=0.20
+        )
+
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(len(edges), 1)
+        edge = edges[0]
+        self.assertEqual(edge.relation, "collaboration")
+        self.assertEqual(edge.shared_papers, 1)
+        self.assertGreater(edge.topic_similarity, 0)
+        self.assertIn("stroke", edge.shared_diseases)
+
+    def test_cross_researcher_citation_is_high_confidence_network_edge(self):
+        researchers = [
+            {
+                "key": "orcid:a",
+                "name": "Researcher A",
+                "orcid": "a",
+                "paper_count": 2,
+                "first_year": 2020,
+                "last_year": 2024,
+                "top_diseases": ["stroke"],
+                "top_methods": ["GWAS"],
+                "top_data_types": ["genomics"],
+                "stage_path": ["discovery/association"],
+                "strong_lineage_count": 1,
+            },
+            {
+                "key": "orcid:b",
+                "name": "Researcher B",
+                "orcid": "b",
+                "paper_count": 2,
+                "first_year": 2021,
+                "last_year": 2025,
+                "top_diseases": ["cancer"],
+                "top_methods": ["single-cell RNA-seq"],
+                "top_data_types": ["transcriptomics"],
+                "stage_path": ["mechanism"],
+                "strong_lineage_count": 1,
+            },
+        ]
+        papers = []
+        lineage_edges = [
+            {
+                "source": "100",
+                "target": "200",
+                "relation": "cross_researcher_citation",
+                "score": 0.85,
+                "tracked_authors": ["Researcher A", "Researcher B"],
+            }
+        ]
+
+        _, edges = researcher_network.build_researcher_network(
+            researchers, papers, lineage_edges, topic_threshold=0.30
+        )
+
+        self.assertEqual(len(edges), 1)
+        self.assertEqual(edges[0].relation, "citation")
+        self.assertEqual(edges[0].direct_citations, 1)
+        self.assertGreaterEqual(edges[0].score, 0.85)
 
 
 if __name__ == "__main__":
