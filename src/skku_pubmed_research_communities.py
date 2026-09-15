@@ -23,6 +23,11 @@ import argparse
 import csv
 import json
 from collections import Counter, defaultdict
+
+try:
+    import networkx as nx
+except ImportError:  # pragma: no cover - surfaced with a clear runtime message.
+    nx = None
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -115,60 +120,12 @@ def _build_adjacency(
     return adjacency
 
 
-def detect_communities(
-    nodes: list[dict],
-    edges: list[dict],
-    min_edge_score: float = 0.65,
-    max_iter: int = 100,
+def _connected_component_labels(
+    node_keys: set[str],
+    adjacency: dict[str, dict[str, float]],
 ) -> dict[str, str]:
-    """Deterministic weighted label propagation.
-
-    Every researcher starts with a unique label. Each iteration moves a researcher
-    to the neighboring label with the highest summed edge weight. Ties are resolved
-    by preferring the current label, then lexicographically for reproducibility.
-    Isolated researchers remain singleton communities.
-    """
-    node_keys = {str(node.get("key", "")) for node in nodes if node.get("key")}
-    adjacency = _build_adjacency(node_keys, edges, min_edge_score)
-    labels = {key: key for key in sorted(node_keys)}
-
-    for _ in range(max_iter):
-        changed = False
-        next_labels = dict(labels)
-
-        # Update sequentially in stable order using the prior full iteration labels.
-        for key in sorted(node_keys):
-            neighbors = adjacency.get(key, {})
-            if not neighbors:
-                continue
-
-            scores: dict[str, float] = defaultdict(float)
-            for neighbor, weight in neighbors.items():
-                scores[labels[neighbor]] += weight
-
-            if not scores:
-                continue
-
-            best_score = max(scores.values())
-            candidates = sorted(
-                label for label, score in scores.items()
-                if abs(score - best_score) < 1e-12
-            )
-            current = labels[key]
-            chosen = current if current in candidates else candidates[0]
-            if chosen != current:
-                next_labels[key] = chosen
-                changed = True
-
-        labels = next_labels
-        if not changed:
-            break
-
-    # A synchronous two-node graph can oscillate labels. Collapse labels through
-    # strong-edge connected components to guarantee stable, deterministic groups.
-    # This preserves graph separation at min_edge_score and avoids false splitting.
     visited: set[str] = set()
-    component_map: dict[str, str] = {}
+    labels: dict[str, str] = {}
     for start in sorted(node_keys):
         if start in visited:
             continue
@@ -184,9 +141,110 @@ def detect_communities(
                     stack.append(neighbor)
         canonical = min(component)
         for member in component:
-            component_map[member] = canonical
+            labels[member] = canonical
+    return labels
 
-    return component_map
+
+def _build_networkx_graph(
+    node_keys: set[str],
+    edges: list[dict],
+    min_edge_score: float,
+):
+    if nx is None:
+        raise RuntimeError(
+            "networkx is required for Louvain community detection. "
+            "Install networkx>=3.2 or use --algorithm connected."
+        )
+    graph = nx.Graph()
+    graph.add_nodes_from(sorted(node_keys))
+    for edge in edges:
+        source = str(edge.get("source", ""))
+        target = str(edge.get("target", ""))
+        score = _edge_weight(edge)
+        if (
+            source not in node_keys
+            or target not in node_keys
+            or source == target
+            or score < min_edge_score
+        ):
+            continue
+        if graph.has_edge(source, target):
+            if score > graph[source][target].get("weight", 0.0):
+                graph[source][target]["weight"] = score
+        else:
+            graph.add_edge(source, target, weight=score)
+    return graph
+
+
+def detect_communities(
+    nodes: list[dict],
+    edges: list[dict],
+    min_edge_score: float = 0.65,
+    algorithm: str = "louvain",
+    resolution: float = 1.0,
+    seed: int = 42,
+) -> dict[str, str]:
+    """Return researcher -> deterministic raw community label.
+
+    Louvain is the default because connected components collapse institution-scale
+    collaboration graphs into giant components through a handful of bridge edges.
+    The connected mode is retained only as a diagnostic/backward-compatible option.
+    """
+    node_keys = {str(node.get("key", "")) for node in nodes if node.get("key")}
+    adjacency = _build_adjacency(node_keys, edges, min_edge_score)
+
+    if algorithm == "connected":
+        return _connected_component_labels(node_keys, adjacency)
+    if algorithm != "louvain":
+        raise ValueError(f"Unsupported community algorithm: {algorithm}")
+
+    graph = _build_networkx_graph(node_keys, edges, min_edge_score)
+    communities = nx.algorithms.community.louvain_communities(
+        graph,
+        weight="weight",
+        resolution=resolution,
+        threshold=1e-7,
+        seed=seed,
+    )
+
+    ordered = sorted(
+        (sorted(group) for group in communities),
+        key=lambda group: (-len(group), group[0] if group else ""),
+    )
+    labels: dict[str, str] = {}
+    for group in ordered:
+        if not group:
+            continue
+        canonical = group[0]
+        for key in group:
+            labels[key] = canonical
+
+    # networkx includes isolated nodes, but keep this defensive fallback explicit.
+    for key in sorted(node_keys):
+        labels.setdefault(key, key)
+    return labels
+
+
+def calculate_modularity(
+    nodes: list[dict],
+    edges: list[dict],
+    membership_rows: list["CommunityMember"],
+    min_edge_score: float,
+) -> float:
+    if nx is None:
+        return 0.0
+    node_keys = {str(node.get("key", "")) for node in nodes if node.get("key")}
+    graph = _build_networkx_graph(node_keys, edges, min_edge_score)
+    if graph.number_of_edges() == 0:
+        return 0.0
+    grouped: dict[str, set[str]] = defaultdict(set)
+    for member in membership_rows:
+        grouped[member.community_id].add(member.researcher_key)
+    partition = [group for group in grouped.values() if group]
+    return round(
+        nx.algorithms.community.modularity(graph, partition, weight="weight"),
+        6,
+    )
 
 
 def _counter_top(values: list[list[str]], n: int = 6) -> list[str]:
@@ -215,8 +273,18 @@ def build_research_communities(
     edges: list[dict],
     min_edge_score: float = 0.65,
     strong_edge_score: float = 0.85,
+    algorithm: str = "louvain",
+    resolution: float = 1.0,
+    seed: int = 42,
 ) -> tuple[list[ResearchCommunity], list[CommunityMember], list[CommunityEdge]]:
-    raw_labels = detect_communities(nodes, edges, min_edge_score=min_edge_score)
+    raw_labels = detect_communities(
+        nodes,
+        edges,
+        min_edge_score=min_edge_score,
+        algorithm=algorithm,
+        resolution=resolution,
+        seed=seed,
+    )
     node_map = {str(node.get("key", "")): node for node in nodes if node.get("key")}
 
     grouped: dict[str, list[str]] = defaultdict(list)
@@ -464,6 +532,14 @@ def main() -> int:
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--min-edge-score", type=float, default=0.65)
     parser.add_argument("--strong-edge-score", type=float, default=0.85)
+    parser.add_argument(
+        "--algorithm",
+        choices=["louvain", "connected"],
+        default="louvain",
+        help="Community detection algorithm. Louvain is recommended at institution scale.",
+    )
+    parser.add_argument("--resolution", type=float, default=1.0)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir)
@@ -477,6 +553,9 @@ def main() -> int:
         edges,
         min_edge_score=args.min_edge_score,
         strong_edge_score=args.strong_edge_score,
+        algorithm=args.algorithm,
+        resolution=args.resolution,
+        seed=args.seed,
     )
 
     community_json = [asdict(x) for x in communities]
@@ -507,13 +586,25 @@ def main() -> int:
     write_csv(output_dir / "community_edges.csv", edge_json)
     render_html(output_dir / "research_community_map.html", communities, community_edges)
 
+    largest_size = max((x.researcher_count for x in communities), default=0)
     summary = {
+        "community_version": 2,
+        "algorithm": args.algorithm,
+        "resolution": args.resolution,
+        "seed": args.seed,
         "communities": len(communities),
         "researchers": len(nodes),
         "multi_researcher_communities": sum(x.researcher_count >= 2 for x in communities),
         "singleton_communities": sum(x.researcher_count == 1 for x in communities),
         "inter_community_edges": len(community_edges),
-        "largest_community_size": max((x.researcher_count for x in communities), default=0),
+        "largest_community_size": largest_size,
+        "largest_community_fraction": round(largest_size / len(nodes), 6) if nodes else 0.0,
+        "modularity": calculate_modularity(
+            nodes,
+            edges,
+            members,
+            min_edge_score=args.min_edge_score,
+        ),
         "min_edge_score": args.min_edge_score,
         "strong_edge_score": args.strong_edge_score,
     }
