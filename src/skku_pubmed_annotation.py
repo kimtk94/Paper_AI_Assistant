@@ -69,11 +69,13 @@ METHOD_PATTERNS: dict[str, tuple[str, ...]] = {
     "registry/inception cohort": ("registry-based", "registry based", "registry", "inception cohort"),
     "multicenter cohort": ("multicenter", "multi-center", "cohort study"),
     "correlation analysis": ("correlation", "correlated with", "association between"),
+    "association analysis": ("associated with", "association with", "risk factor", "predictor of"),
     "pharmacokinetics/TDM": ("pharmacokinetic", "trough level", "trough target", "drug concentration", "therapeutic drug monitoring"),
     "comparative effectiveness": ("comparison of", "compared with", "versus", "monotherapy", "combination therapy"),
     "endoscopic assessment": ("endoscopic", "colonoscopy", "ses-cd", "mayo score"),
     "biomarker analysis": ("biomarker", "serum level", "plasma level", "calprotectin", "cytokine"),
     "treatment outcome analysis": ("remission", "healing", "treatment response", "efficacy", "effective for the treatment"),
+    "case report/series": ("case report", "case reports", "case series"),
 }
 
 DATA_PATTERNS: dict[str, tuple[str, ...]] = {
