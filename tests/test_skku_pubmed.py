@@ -284,5 +284,105 @@ class TestResearchLineageClassification(unittest.TestCase):
         self.assertEqual(direct.tracked_authors, ["Tae Hoon Kim"])
 
 
+
+class TestResearchProfileAnnotation(unittest.TestCase):
+    def test_gwas_mr_stroke_profile(self):
+        paper = parsed_paper()
+        paper.title = "Genome-wide association study identifies stroke risk variants"
+        paper.abstract = (
+            "We performed GWAS and Mendelian randomization to evaluate "
+            "genetic determinants and causal effects for ischemic stroke."
+        )
+        paper.mesh_terms = ["Stroke", "Genetic Association Studies"]
+        paper.keywords = ["GWAS", "Mendelian randomization"]
+
+        ann = followup.annotate_paper(paper)
+
+        self.assertIn("stroke", ann.disease_terms)
+        self.assertIn("GWAS", ann.methods)
+        self.assertIn("Mendelian randomization", ann.methods)
+        self.assertIn("genomics", ann.data_types)
+        self.assertEqual(ann.research_stage, "causal inference")
+        self.assertIn("causal relationship", ann.research_question)
+
+    def test_progression_detects_method_and_data_shift(self):
+        source = followup.PaperAnnotation(
+            pmid="100",
+            disease_terms=["stroke"],
+            methods=["GWAS"],
+            data_types=["genomics"],
+            research_stage="discovery/association",
+            research_question="Q1",
+            evidence_terms=["gwas"],
+        )
+        target = followup.PaperAnnotation(
+            pmid="200",
+            disease_terms=["stroke"],
+            methods=["single-cell RNA-seq"],
+            data_types=["transcriptomics", "single-cell"],
+            research_stage="mechanism",
+            research_question="Q2",
+            evidence_terms=["single-cell rna"],
+        )
+
+        summary = followup.progression_summary(source, target)
+
+        self.assertIn("stage: discovery/association → mechanism", summary)
+        self.assertIn("new method: single-cell RNA-seq", summary)
+        self.assertIn("new data:", summary)
+
+    def test_lineage_edge_contains_profile_progression(self):
+        key = "orcid:0000-0001-2345-6789"
+        registry = {
+            key: followup.TrackedAuthor(
+                key=key,
+                name="Tae Hoon Kim",
+                orcid="0000-0001-2345-6789",
+                confidence="high",
+                seed_pmids=["100"],
+            )
+        }
+        paper_authors = {"100": {key}, "200": {key}}
+        edges = [
+            followup.ContinuationEdge(
+                source="100",
+                target="200",
+                relation="author_continuation",
+                tracked_author="Tae Hoon Kim",
+                author_key=key,
+                confidence="high",
+                evidence="ORCID 0000-0001-2345-6789",
+            )
+        ]
+        annotations = {
+            "100": followup.PaperAnnotation(
+                pmid="100",
+                disease_terms=["stroke"],
+                methods=["GWAS"],
+                data_types=["genomics"],
+                research_stage="discovery/association",
+                research_question="Q1",
+                evidence_terms=[],
+            ),
+            "200": followup.PaperAnnotation(
+                pmid="200",
+                disease_terms=["stroke"],
+                methods=["single-cell RNA-seq"],
+                data_types=["transcriptomics", "single-cell"],
+                research_stage="mechanism",
+                research_question="Q2",
+                evidence_terms=[],
+            ),
+        }
+
+        lineage_edges = followup.build_research_lineage_edges(
+            edges, paper_authors, registry, annotations
+        )
+
+        self.assertEqual(lineage_edges[0].source_stage, "discovery/association")
+        self.assertEqual(lineage_edges[0].target_stage, "mechanism")
+        self.assertIn("single-cell RNA-seq", lineage_edges[0].progression)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
