@@ -1005,6 +1005,12 @@ def main() -> int:
     write_report(out / "continuation.md", registry, followed, edges, lineage_edges)
 
     summary = {
+        "followup_version": 2,
+        "registry_policy": "conservative_shared_block_initial_attribution",
+        "start_year": args.start_year,
+        "end_year": args.end_year,
+        "max_authors": args.max_authors,
+        "max_per_author": args.max_per_author,
         "tracked_researchers": len(registry),
         "high_confidence_orcid": sum(x.confidence == "high" for x in registry),
         "low_confidence_name": sum(x.confidence == "low" for x in registry),
