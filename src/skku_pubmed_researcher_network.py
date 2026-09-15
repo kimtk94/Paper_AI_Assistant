@@ -110,6 +110,7 @@ def build_researcher_network(
     papers: list[dict],
     lineage_edges: list[dict],
     topic_threshold: float = 0.30,
+    include_thematic: bool = True,
 ) -> tuple[list[ResearcherNode], list[ResearcherEdge]]:
     nodes = build_nodes(researchers)
     by_key = {x.key: x for x in nodes}
@@ -144,66 +145,77 @@ def build_researcher_network(
 
     edges: list[ResearcherEdge] = []
     keys = sorted(by_key)
-    for i, left in enumerate(keys):
-        for right in keys[i + 1 :]:
-            a, b = by_key[left], by_key[right]
-            pair = (left, right)
-            shared_pmids = sorted(x for x in collaboration.get(pair, set()) if x)
-            citations = citation_counts.get(pair, 0)
-            similarity, shared_disease, shared_methods, shared_data = profile_similarity(a, b)
 
-            if not shared_pmids and citations == 0 and similarity < topic_threshold:
-                continue
+    if include_thematic:
+        candidate_pairs = [
+            (left, right)
+            for i, left in enumerate(keys)
+            for right in keys[i + 1 :]
+        ]
+    else:
+        candidate_pairs = sorted(set(collaboration) | set(citation_counts))
 
-            if shared_pmids and citations:
-                relation = "collaboration+citation"
-                score = min(1.0, 0.95 + 0.05 * similarity)
-            elif citations:
-                relation = "citation"
-                score = min(1.0, 0.85 + 0.10 * similarity)
-            elif shared_pmids:
-                relation = "collaboration"
-                score = min(0.94, 0.75 + 0.15 * similarity + 0.02 * min(len(shared_pmids), 5))
-            else:
-                relation = "thematic_overlap"
-                score = min(0.84, 0.45 + 0.45 * similarity)
+    for left, right in candidate_pairs:
+        a, b = by_key[left], by_key[right]
+        pair = (left, right)
+        shared_pmids = sorted(x for x in collaboration.get(pair, set()) if x)
+        citations = citation_counts.get(pair, 0)
+        similarity, shared_disease, shared_methods, shared_data = profile_similarity(a, b)
 
-            evidence_parts = []
-            if shared_pmids:
-                evidence_parts.append(
-                    f"shared papers={len(shared_pmids)} ({', '.join(shared_pmids[:5])})"
-                )
-            if citations:
-                examples = citation_examples.get(pair, [])
-                evidence_parts.append(
-                    f"cross-researcher citations={citations}"
-                    + (f" ({', '.join(examples[:5])})" if examples else "")
-                )
-            if shared_disease:
-                evidence_parts.append("shared disease=" + ", ".join(shared_disease[:4]))
-            if shared_methods:
-                evidence_parts.append("shared method=" + ", ".join(shared_methods[:4]))
-            if shared_data:
-                evidence_parts.append("shared data=" + ", ".join(shared_data[:4]))
-            evidence_parts.append(f"profile similarity={similarity:.3f}")
+        if not shared_pmids and citations == 0 and (
+            not include_thematic or similarity < topic_threshold
+        ):
+            continue
 
-            edges.append(
-                ResearcherEdge(
-                    source=left,
-                    target=right,
-                    source_name=a.name,
-                    target_name=b.name,
-                    relation=relation,
-                    score=round(score, 4),
-                    shared_papers=len(shared_pmids),
-                    direct_citations=citations,
-                    topic_similarity=similarity,
-                    shared_diseases=shared_disease,
-                    shared_methods=shared_methods,
-                    shared_data_types=shared_data,
-                    evidence="; ".join(evidence_parts),
-                )
+        if shared_pmids and citations:
+            relation = "collaboration+citation"
+            score = min(1.0, 0.95 + 0.05 * similarity)
+        elif citations:
+            relation = "citation"
+            score = min(1.0, 0.85 + 0.10 * similarity)
+        elif shared_pmids:
+            relation = "collaboration"
+            score = min(0.94, 0.75 + 0.15 * similarity + 0.02 * min(len(shared_pmids), 5))
+        else:
+            relation = "thematic_overlap"
+            score = min(0.84, 0.45 + 0.45 * similarity)
+
+        evidence_parts = []
+        if shared_pmids:
+            evidence_parts.append(
+                f"shared papers={len(shared_pmids)} ({', '.join(shared_pmids[:5])})"
             )
+        if citations:
+            examples = citation_examples.get(pair, [])
+            evidence_parts.append(
+                f"cross-researcher citations={citations}"
+                + (f" ({', '.join(examples[:5])})" if examples else "")
+            )
+        if shared_disease:
+            evidence_parts.append("shared disease=" + ", ".join(shared_disease[:4]))
+        if shared_methods:
+            evidence_parts.append("shared method=" + ", ".join(shared_methods[:4]))
+        if shared_data:
+            evidence_parts.append("shared data=" + ", ".join(shared_data[:4]))
+        evidence_parts.append(f"profile similarity={similarity:.3f}")
+
+        edges.append(
+            ResearcherEdge(
+                source=left,
+                target=right,
+                source_name=a.name,
+                target_name=b.name,
+                relation=relation,
+                score=round(score, 4),
+                shared_papers=len(shared_pmids),
+                direct_citations=citations,
+                topic_similarity=similarity,
+                shared_diseases=shared_disease,
+                shared_methods=shared_methods,
+                shared_data_types=shared_data,
+                evidence="; ".join(evidence_parts),
+            )
+        )
 
     edges.sort(key=lambda e: (-e.score, -e.direct_citations, -e.shared_papers, e.source_name, e.target_name))
     return nodes, edges
@@ -329,6 +341,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build researcher-level network from SKKU PubMed lineage outputs.")
     parser.add_argument("--input-dir", default="outputs/skku_pubmed_followup")
     parser.add_argument("--topic-threshold", type=float, default=0.30)
+    parser.add_argument(
+        "--skip-thematic",
+        action="store_true",
+        help="Only evaluate observed collaboration/citation pairs; avoids O(R^2) thematic comparisons.",
+    )
     parser.add_argument("--output-dir", default="")
     args = parser.parse_args()
 
@@ -345,6 +362,7 @@ def main() -> int:
         papers,
         lineage_edges,
         topic_threshold=args.topic_threshold,
+        include_thematic=not args.skip_thematic,
     )
 
     node_json = [asdict(x) for x in nodes]
@@ -381,6 +399,7 @@ def main() -> int:
         "collaboration": sum(e.relation == "collaboration" for e in edges),
         "thematic_overlap": sum(e.relation == "thematic_overlap" for e in edges),
         "high_confidence_edges": sum(e.score >= 0.85 for e in edges),
+        "thematic_enabled": not args.skip_thematic,
     }
     (output_dir / "researcher_network_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
