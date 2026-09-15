@@ -171,6 +171,29 @@ class TestAuthorContinuation(unittest.TestCase):
         self.assertEqual(registry[0].confidence, "high")
         self.assertEqual(registry[0].seed_pmids, ["12345678"])
 
+    def test_registry_ranks_orcid_researchers_by_seed_paper_count(self):
+        def author(name, initials, orcid):
+            return {
+                "name": name,
+                "initials": initials,
+                "orcid": orcid,
+                "affiliations": [
+                    "Department of Medicine, Sungkyunkwan University, Seoul, Korea."
+                ],
+                "is_skku": True,
+            }
+
+        seed = [
+            {"pmid": "1", "authors": [author("Alpha Researcher", "AR", "0000-A")]},
+            {"pmid": "2", "authors": [author("Beta Researcher", "BR", "0000-B")]},
+            {"pmid": "3", "authors": [author("Beta Researcher", "BR", "0000-B")]},
+            {"pmid": "4", "authors": [author("Beta Researcher", "BR", "0000-B")]},
+        ]
+        registry = followup.build_registry(seed, allow_name_fallback=False)
+        self.assertEqual(registry[0].name, "Beta Researcher")
+        self.assertEqual(len(registry[0].seed_pmids), 3)
+        self.assertEqual(registry[1].name, "Alpha Researcher")
+
     def test_orcid_author_query_uses_auid(self):
         tracked = followup.TrackedAuthor(
             key="orcid:0000-0001-2345-6789",
