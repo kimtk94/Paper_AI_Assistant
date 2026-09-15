@@ -47,6 +47,7 @@ jobs:
         run: |
           python -m py_compile \
             src/skku_pubmed_lineage.py \
+            src/skku_pubmed_domain.py \
             src/skku_pubmed_annotation.py \
             src/skku_pubmed_seed_profiles.py \
             src/skku_pubmed_author_followup.py \
