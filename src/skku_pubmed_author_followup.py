@@ -31,7 +31,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from skku_pubmed_lineage import Author, Paper, PubMedClient
+from skku_pubmed_lineage import Author, Paper, PubMedClient, is_skku_author
 from skku_pubmed_annotation import PaperAnnotation, annotate_paper, progression_summary
 
 
@@ -123,9 +123,13 @@ def build_registry(seed_records: list[dict], allow_name_fallback: bool) -> list[
     for paper in seed_records:
         pmid = str(paper.get("pmid", ""))
         for author in paper.get("authors", []):
-            if not author.get("is_skku"):
-                continue
             name = author.get("name", "").strip()
+            initials = author.get("initials", "").strip()
+            affiliations = list(author.get("affiliations", []) or [])
+            # Re-evaluate legacy seed records from raw affiliations so deep ORCID
+            # selection uses the same conservative institution policy as STEP 2.
+            if not is_skku_author(name, initials, affiliations):
+                continue
             orcid = author.get("orcid", "").replace("https://orcid.org/", "").strip()
 
             if orcid:
