@@ -93,6 +93,25 @@ class TestPubMedParsing(unittest.TestCase):
         self.assertEqual(len(paper.skku_affiliation_evidence), 1)
         self.assertIn("Sungkyunkwan University", paper.skku_affiliation_evidence[0])
 
+    def test_consortium_shared_affiliation_requires_author_initial_match(self):
+        shared = (
+            "Institution A (A.A.); Institution B (B.B.); Institution C (C.C.); "
+            "Institution D (D.D.); Institution E (E.E.); Institution F (F.F.); "
+            "Institution G (G.G.); Institution H (H.H.); "
+            "Kangbuk Samsung Hospital, Sungkyunkwan University School of Medicine "
+            "(J.-H.B.); Institution I (I.I.); Institution J (J.J.)"
+        )
+        self.assertEqual(
+            lineage.skku_author_match_status("Ji Hyun Bae", "JHB", [shared]),
+            "attributed",
+        )
+        self.assertTrue(lineage.is_skku_author("Ji Hyun Bae", "JHB", [shared]))
+        self.assertEqual(
+            lineage.skku_author_match_status("Michael Hill", "MDH", [shared]),
+            "ambiguous",
+        )
+        self.assertFalse(lineage.is_skku_author("Michael Hill", "MDH", [shared]))
+
     def test_query_contains_affiliation_date_and_topic(self):
         query = lineage.build_query(
             start_year=2020,
@@ -623,6 +642,73 @@ class TestResearcherNetwork(unittest.TestCase):
         self.assertGreater(edge.topic_similarity, 0)
         self.assertIn("stroke", edge.shared_diseases)
 
+    def test_large_consortium_paper_does_not_create_pairwise_clique(self):
+        researchers = [
+            {
+                "key": f"orcid:{i}",
+                "name": f"Researcher {i}",
+                "orcid": str(i),
+                "paper_count": 1,
+                "first_year": 2026,
+                "last_year": 2026,
+                "top_diseases": ["stroke"],
+                "top_methods": [],
+                "top_data_types": [],
+                "stage_path": [],
+                "strong_lineage_count": 0,
+            }
+            for i in range(60)
+        ]
+        papers = [{
+            "pmid": "999",
+            "tracked_author_keys": [f"orcid:{i}" for i in range(60)],
+            "tracked_authors": [f"Researcher {i}" for i in range(60)],
+        }]
+
+        _, edges = researcher_network.build_researcher_network(
+            researchers,
+            papers,
+            [],
+            include_thematic=False,
+            max_clique_authors=50,
+        )
+        self.assertEqual(edges, [])
+
+    def test_large_but_allowed_team_is_downweighted(self):
+        researchers = [
+            {
+                "key": f"orcid:{i}",
+                "name": f"Researcher {i}",
+                "orcid": str(i),
+                "paper_count": 1,
+                "first_year": 2026,
+                "last_year": 2026,
+                "top_diseases": ["stroke"],
+                "top_methods": [],
+                "top_data_types": [],
+                "stage_path": [],
+                "strong_lineage_count": 0,
+            }
+            for i in range(10)
+        ]
+        papers = [{
+            "pmid": "998",
+            "tracked_author_keys": [f"orcid:{i}" for i in range(10)],
+            "tracked_authors": [f"Researcher {i}" for i in range(10)],
+        }]
+
+        _, edges = researcher_network.build_researcher_network(
+            researchers,
+            papers,
+            [],
+            include_thematic=False,
+            max_clique_authors=50,
+            team_full_weight_max=8,
+        )
+        self.assertTrue(edges)
+        self.assertLess(edges[0].collaboration_weight, 1.0)
+        self.assertEqual(edges[0].max_team_size, 10)
+
     def test_cross_researcher_citation_is_high_confidence_network_edge(self):
         researchers = [
             {
@@ -739,6 +825,65 @@ class TestResearchCommunities(unittest.TestCase):
         self.assertIn("stroke", labels)
         self.assertIn("cancer", labels)
         self.assertEqual(len(community_edges), 1)
+
+    def test_louvain_separates_dense_groups_joined_by_bridge(self):
+        nodes = []
+        for key in ["a", "b", "c", "d", "e", "f"]:
+            disease = "stroke" if key in {"a", "b", "c"} else "cancer"
+            nodes.append({
+                "key": key,
+                "name": key.upper(),
+                "orcid": key,
+                "paper_count": 3,
+                "first_year": 2020,
+                "last_year": 2026,
+                "top_diseases": [disease],
+                "top_methods": ["GWAS"] if disease == "stroke" else ["single-cell RNA-seq"],
+                "top_data_types": ["genomics"] if disease == "stroke" else ["transcriptomics"],
+                "stage_path": ["discovery/association"],
+                "strong_lineage_count": 0,
+            })
+
+        edges = []
+        for left, right in [("a", "b"), ("a", "c"), ("b", "c"), ("d", "e"), ("d", "f"), ("e", "f")]:
+            edges.append({
+                "source": left, "target": right, "relation": "collaboration",
+                "score": 0.93, "shared_papers": 3, "direct_citations": 0,
+                "topic_similarity": 0.7, "shared_diseases": [],
+                "shared_methods": [], "shared_data_types": [], "evidence": "",
+            })
+        # This bridge is above min_edge_score, so connected components would merge
+        # all six researchers. Louvain should preserve the two dense modules.
+        edges.append({
+            "source": "c", "target": "d", "relation": "collaboration",
+            "score": 0.70, "shared_papers": 1, "direct_citations": 0,
+            "topic_similarity": 0.0, "shared_diseases": [],
+            "shared_methods": [], "shared_data_types": [], "evidence": "",
+        })
+
+        communities1, members1, cross1 = research_communities.build_research_communities(
+            nodes,
+            edges,
+            min_edge_score=0.65,
+            algorithm="louvain",
+            resolution=1.0,
+            seed=42,
+        )
+        communities2, members2, _ = research_communities.build_research_communities(
+            nodes,
+            edges,
+            min_edge_score=0.65,
+            algorithm="louvain",
+            resolution=1.0,
+            seed=42,
+        )
+
+        self.assertEqual(sorted(x.researcher_count for x in communities1), [3, 3])
+        self.assertEqual(
+            [(m.researcher_key, m.community_id) for m in members1],
+            [(m.researcher_key, m.community_id) for m in members2],
+        )
+        self.assertEqual(len(cross1), 1)
 
     def test_live_style_two_researcher_cluster_has_hub_and_theme(self):
         nodes = [
