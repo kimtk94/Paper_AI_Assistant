@@ -1,5 +1,6 @@
 import json
 import sys
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -460,6 +461,111 @@ class TestResearchAnnotation(unittest.TestCase):
         self.assertIn("stage:", progression)
         self.assertIn("Mendelian randomization", progression)
         self.assertEqual(a2.research_stage, "causal inference")
+
+
+
+class TestResearcherTrajectory(unittest.TestCase):
+    def _followed(self, pmid, year, stage, methods, data_types):
+        return followup.FollowedPaper(
+            pmid=pmid,
+            year=year,
+            title=f"Paper {pmid}",
+            journal="Journal",
+            doi="",
+            pubmed_url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+            tracked_authors=["Tae Hoon Kim"],
+            tracked_author_keys=["orcid:0000-0001-2345-6789"],
+            current_affiliations=["Sungkyunkwan University"],
+            skku_current=True,
+            disease_terms=["stroke"],
+            methods=methods,
+            data_types=data_types,
+            research_stage=stage,
+            research_question="Example question?",
+        )
+
+    def test_researcher_trajectory_summary(self):
+        tracked = followup.TrackedAuthor(
+            key="orcid:0000-0001-2345-6789",
+            name="Tae Hoon Kim",
+            orcid="0000-0001-2345-6789",
+            confidence="high",
+            seed_pmids=["100"],
+        )
+        papers = [
+            self._followed("100", 2020, "discovery/association", ["GWAS"], ["genomics"]),
+            self._followed("200", 2024, "causal inference", ["Mendelian randomization"], ["genomics"]),
+        ]
+        lineage_edges = [
+            followup.ResearchLineageEdge(
+                source="100",
+                target="200",
+                relation="direct_citation_continuation",
+                score=1.0,
+                tracked_authors=["Tae Hoon Kim"],
+                confidence="high",
+                evidence="200 cites 100",
+                source_stage="discovery/association",
+                target_stage="causal inference",
+                progression="stage: discovery/association → causal inference",
+            )
+        ]
+
+        trajectories = followup.build_researcher_trajectories(
+            [tracked], papers, lineage_edges
+        )
+        self.assertEqual(len(trajectories), 1)
+        t = trajectories[0]
+        self.assertEqual(t.paper_count, 2)
+        self.assertEqual((t.first_year, t.last_year), (2020, 2024))
+        self.assertEqual(
+            t.stage_path, ["discovery/association", "causal inference"]
+        )
+        self.assertEqual(t.strong_lineage_count, 1)
+        self.assertIn("GWAS", t.top_methods)
+        self.assertIn("Mendelian randomization", t.top_methods)
+
+    def test_trajectory_html_contains_researcher_and_graph_payload(self):
+        tracked = followup.TrackedAuthor(
+            key="orcid:0000-0001-2345-6789",
+            name="Tae Hoon Kim",
+            orcid="0000-0001-2345-6789",
+            confidence="high",
+            seed_pmids=["100"],
+        )
+        papers = [
+            self._followed("100", 2020, "discovery/association", ["GWAS"], ["genomics"]),
+            self._followed("200", 2024, "causal inference", ["Mendelian randomization"], ["genomics"]),
+        ]
+        lineage_edges = [
+            followup.ResearchLineageEdge(
+                source="100",
+                target="200",
+                relation="direct_citation_continuation",
+                score=1.0,
+                tracked_authors=["Tae Hoon Kim"],
+                confidence="high",
+                evidence="200 cites 100",
+                source_stage="discovery/association",
+                target_stage="causal inference",
+                progression="stage: discovery/association → causal inference",
+            )
+        ]
+        trajectories = followup.build_researcher_trajectories(
+            [tracked], papers, lineage_edges
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "trajectory.html"
+            followup.render_research_trajectory_html(
+                path, papers, lineage_edges, trajectories
+            )
+            html = path.read_text(encoding="utf-8")
+
+        self.assertIn("vis-network", html)
+        self.assertIn("Tae Hoon Kim", html)
+        self.assertIn("direct_citation_continuation", html)
+        self.assertIn("strong citation lineage only", html)
 
 
 if __name__ == "__main__":
