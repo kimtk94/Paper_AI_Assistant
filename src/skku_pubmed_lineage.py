@@ -36,6 +36,69 @@ from typing import Iterable, Optional
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 TOOL = "skku_pubmed_lineage"
 SKKU_RE = re.compile(r"\bsungkyunkwan\b|\bskku\b", re.I)
+AUTHOR_MARKER_RE = re.compile(r"\(([^)]{1,100})\)")
+
+
+def _compact_initials(value: str) -> str:
+    return re.sub(r"[^A-Za-z]", "", value or "").upper()
+
+
+def _looks_like_shared_affiliation_block(value: str) -> bool:
+    """Detect PubMed consortium-style affiliation blobs shared across many authors.
+
+    Some multicentre records attach one very long institution list to every author.
+    A single SKKU occurrence in such a blob must not mark every author as SKKU.
+    """
+    text = value or ""
+    marker_count = len(AUTHOR_MARKER_RE.findall(text))
+    return len(text) >= 800 or text.count(";") >= 8 or marker_count >= 8
+
+
+def skku_author_match_status(
+    name: str,
+    initials: str,
+    affiliations: Iterable[str],
+) -> str:
+    """Return none/direct/attributed/ambiguous for an author's SKKU affiliation.
+
+    Normal author-specific affiliation strings are accepted directly. For very long
+    consortium-style shared affiliation blocks, SKKU is accepted only when a nearby
+    parenthetical author marker matches the PubMed author initials. This deliberately
+    prefers false negatives over assigning hundreds of collaborators to SKKU.
+    """
+    matching = [str(a) for a in affiliations if SKKU_RE.search(str(a))]
+    if not matching:
+        return "none"
+
+    compact = _compact_initials(initials)
+    if not compact:
+        # Fall back to initials inferred from the displayed author name.
+        compact = "".join(part[0] for part in re.findall(r"[A-Za-z]+", name or "") if part).upper()
+
+    saw_shared = False
+    for affiliation in matching:
+        if not _looks_like_shared_affiliation_block(affiliation):
+            return "direct"
+        saw_shared = True
+        if len(compact) < 2:
+            continue
+        for match in SKKU_RE.finditer(affiliation):
+            start = max(0, match.start() - 350)
+            end = min(len(affiliation), match.end() + 350)
+            window = affiliation[start:end]
+            for marker in AUTHOR_MARKER_RE.findall(window):
+                # Markers may contain multiple authors separated by commas/slashes.
+                tokens = re.split(r"[,;/&]|\band\b", marker, flags=re.I)
+                normalized = {_compact_initials(token) for token in tokens}
+                normalized.discard("")
+                if compact in normalized:
+                    return "attributed"
+
+    return "ambiguous" if saw_shared else "none"
+
+
+def is_skku_author(name: str, initials: str, affiliations: Iterable[str]) -> bool:
+    return skku_author_match_status(name, initials, affiliations) in {"direct", "attributed"}
 
 
 @dataclass
@@ -146,7 +209,7 @@ def parse_author(node: ET.Element) -> Author:
         initials=initials,
         orcid=orcid,
         affiliations=affs,
-        is_skku=any(SKKU_RE.search(a) for a in affs),
+        is_skku=is_skku_author(name, initials, affs),
     )
 
 
