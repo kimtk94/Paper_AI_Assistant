@@ -13,6 +13,7 @@ Important:
 from __future__ import annotations
 
 import argparse
+import calendar
 import csv
 import json
 import math
@@ -251,19 +252,38 @@ class PubMedClient:
         self.last_request = time.monotonic()
         return payload
 
-    def search(self, query: str, max_results: int) -> tuple[int, list[str]]:
+    def search_page(
+        self,
+        query: str,
+        retstart: int = 0,
+        retmax: int = 500,
+    ) -> tuple[int, list[str]]:
+        if retstart < 0:
+            raise ValueError("retstart must be >= 0")
+        if retmax < 0 or retmax > 10000:
+            raise ValueError("retmax must be between 0 and 10000")
+        if retstart + retmax > 10000:
+            raise ValueError(
+                "PubMed ESearch only exposes the first 10,000 records per query; "
+                "partition the query by date before paging further."
+            )
         payload = self._request(
             "esearch.fcgi",
             {
                 "db": "pubmed",
                 "term": query,
                 "retmode": "json",
-                "retmax": str(max_results),
+                "retstart": str(retstart),
+                "retmax": str(retmax),
                 "sort": "pub_date",
             },
         )
         result = json.loads(payload.decode("utf-8")).get("esearchresult", {})
         return int(result.get("count", 0)), list(result.get("idlist", []))
+
+    def search(self, query: str, max_results: int) -> tuple[int, list[str]]:
+        # Backward-compatible one-page search used by author follow-up.
+        return self.search_page(query, retstart=0, retmax=max_results)
 
     def fetch(self, pmids: Iterable[str], batch_size: int = 150) -> list[Paper]:
         ids = list(dict.fromkeys(str(x) for x in pmids if str(x).strip()))
@@ -315,6 +335,238 @@ def build_query(start_year: int, end_year: int, topic: str, extra: str) -> str:
     if extra.strip():
         parts.append(f"({extra.strip()})")
     return " AND ".join(parts)
+
+
+def build_query_date_window(
+    start_date: str,
+    end_date: str,
+    topic: str,
+    extra: str,
+) -> str:
+    parts = [
+        "(Sungkyunkwan[ad] OR SKKU[ad])",
+        f"{start_date}:{end_date}[dp]",
+    ]
+    if topic.strip():
+        parts.append(f"({topic.strip()})")
+    if extra.strip():
+        parts.append(f"({extra.strip()})")
+    return " AND ".join(parts)
+
+
+def _checkpoint_payload(
+    *,
+    spec: dict,
+    pmids: list[str],
+    completed_windows: list[dict],
+) -> dict:
+    return {
+        "version": 1,
+        "spec": spec,
+        "retrieved_pmids": pmids,
+        "completed_windows": completed_windows,
+        "updated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+def search_partitioned_pubmed(
+    client: PubMedClient,
+    *,
+    start_year: int,
+    end_year: int,
+    topic: str = "",
+    extra: str = "",
+    page_size: int = 500,
+    max_results: int = 0,
+    checkpoint_path: Path | None = None,
+    resume: bool = False,
+) -> tuple[int, list[str], list[dict]]:
+    """Retrieve an arbitrary-size PubMed result set by date partitioning.
+
+    PubMed ESearch only exposes the first 10,000 records for a single query.
+    We therefore partition by publication year; any year above 10,000 hits is
+    automatically partitioned by calendar month. Each partition is then paged
+    with retstart/retmax. max_results=0 means no user cap.
+    """
+    if start_year <= 0 or end_year <= 0:
+        raise ValueError("--all-results requires explicit positive start/end years")
+    if start_year > end_year:
+        raise ValueError("start_year must be <= end_year")
+    if page_size <= 0 or page_size > 10000:
+        raise ValueError("page_size must be between 1 and 10000")
+    if max_results < 0:
+        raise ValueError("max_results must be >= 0")
+
+    spec = {
+        "start_year": start_year,
+        "end_year": end_year,
+        "topic": topic,
+        "extra": extra,
+        "page_size": page_size,
+        "max_results": max_results,
+    }
+    pmids: list[str] = []
+    seen: set[str] = set()
+    completed_windows: list[dict] = []
+    completed_labels: set[str] = set()
+
+    if resume and checkpoint_path and checkpoint_path.exists():
+        saved = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        if saved.get("spec") == spec:
+            for pmid in saved.get("retrieved_pmids", []):
+                value = str(pmid)
+                if value and value not in seen:
+                    seen.add(value)
+                    pmids.append(value)
+            completed_windows = list(saved.get("completed_windows", []))
+            completed_labels = {
+                str(item.get("label", ""))
+                for item in completed_windows
+                if item.get("label")
+            }
+            print(
+                f"[resume] checkpoint PMIDs={len(pmids):,}; "
+                f"windows={len(completed_windows):,}",
+                file=sys.stderr,
+            )
+        else:
+            print("[resume] checkpoint spec differs; starting a new crawl", file=sys.stderr)
+
+    total_hits = 0
+
+    def persist() -> None:
+        if checkpoint_path is None:
+            return
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint_path.write_text(
+            json.dumps(
+                _checkpoint_payload(
+                    spec=spec,
+                    pmids=pmids,
+                    completed_windows=completed_windows,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+    def remaining_cap() -> int | None:
+        if max_results == 0:
+            return None
+        return max(0, max_results - len(pmids))
+
+    def collect_window(query: str, label: str, expected_count: int | None = None) -> int:
+        if label in completed_labels:
+            prior = next(
+                (x for x in completed_windows if x.get("label") == label),
+                {},
+            )
+            return int(prior.get("pubmed_hits", expected_count or 0) or 0)
+
+        cap = remaining_cap()
+        if cap == 0:
+            return 0
+
+        first_retmax = page_size if cap is None else min(page_size, cap)
+        count, first_ids = client.search_page(query, retstart=0, retmax=first_retmax)
+        if count > 10000:
+            raise RuntimeError(
+                f"Partition {label} still has {count:,} hits (>10,000); "
+                "split it into smaller date windows."
+            )
+        if expected_count is not None and count != expected_count:
+            print(
+                f"[crawl] {label}: count changed {expected_count:,} -> {count:,}",
+                file=sys.stderr,
+            )
+
+        target = count if cap is None else min(count, cap)
+        page_ids = first_ids[:target]
+        for pmid in page_ids:
+            value = str(pmid)
+            if value and value not in seen:
+                seen.add(value)
+                pmids.append(value)
+
+        retstart = len(first_ids)
+        while retstart < target:
+            cap_now = remaining_cap()
+            if cap_now == 0:
+                break
+            retmax = min(page_size, target - retstart)
+            if cap_now is not None:
+                retmax = min(retmax, cap_now)
+            _, ids = client.search_page(
+                query,
+                retstart=retstart,
+                retmax=retmax,
+            )
+            if not ids:
+                break
+            for pmid in ids:
+                value = str(pmid)
+                if value and value not in seen:
+                    seen.add(value)
+                    pmids.append(value)
+            retstart += len(ids)
+            print(
+                f"[crawl] {label}: {min(retstart, target):,}/{target:,}",
+                file=sys.stderr,
+            )
+
+        completed_windows.append(
+            {
+                "label": label,
+                "query": query,
+                "pubmed_hits": count,
+                "retrieved_target": target,
+                "retrieved_total_after_window": len(pmids),
+            }
+        )
+        completed_labels.add(label)
+        persist()
+        return count
+
+    # Newest years first, matching PubMed pub_date ordering at the partition level.
+    for year in range(end_year, start_year - 1, -1):
+        if remaining_cap() == 0:
+            break
+
+        year_query = build_query(year, year, topic, extra)
+        year_label = f"{year}"
+        if year_label in completed_labels:
+            prior = next(x for x in completed_windows if x.get("label") == year_label)
+            total_hits += int(prior.get("pubmed_hits", 0) or 0)
+            continue
+
+        year_count, _ = client.search_page(year_query, retstart=0, retmax=0)
+        total_hits += year_count
+        print(f"[crawl] year={year} hits={year_count:,}", file=sys.stderr)
+
+        if year_count <= 10000:
+            collect_window(year_query, year_label, expected_count=year_count)
+            continue
+
+        # Annual partition is still above the PubMed 10k ceiling: split monthly.
+        for month in range(12, 0, -1):
+            if remaining_cap() == 0:
+                break
+            last_day = calendar.monthrange(year, month)[1]
+            start_date = f"{year}/{month:02d}/01"
+            end_date = f"{year}/{month:02d}/{last_day:02d}"
+            label = f"{year}-{month:02d}"
+            month_query = build_query_date_window(start_date, end_date, topic, extra)
+            month_count, _ = client.search_page(month_query, retstart=0, retmax=0)
+            if month_count > 10000:
+                raise RuntimeError(
+                    f"Monthly partition {label} has {month_count:,} hits. "
+                    "A daily partition is required for this query."
+                )
+            collect_window(month_query, label, expected_count=month_count)
+
+    persist()
+    return total_hits, pmids, completed_windows
 
 
 def normalize_term(value: str) -> str:
@@ -640,7 +892,28 @@ def main() -> int:
     parser.add_argument("--end-year", type=int, default=datetime.now().year)
     parser.add_argument("--topic", default="")
     parser.add_argument("--extra-query", default="")
-    parser.add_argument("--max-results", type=int, default=500)
+    parser.add_argument(
+        "--max-results",
+        type=int,
+        default=500,
+        help="Maximum PMIDs to retrieve. With --all-results, 0 means no cap.",
+    )
+    parser.add_argument(
+        "--all-results",
+        action="store_true",
+        help="Crawl the full date range using year/month partitions and pagination.",
+    )
+    parser.add_argument(
+        "--page-size",
+        type=int,
+        default=500,
+        help="ESearch page size for --all-results (1-10000).",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume --all-results from crawl_checkpoint.json when the crawl spec matches.",
+    )
     parser.add_argument("--topic-threshold", type=float, default=0.30)
     parser.add_argument("--max-pairs", type=int, default=250000)
     parser.add_argument("--skip-citations", action="store_true")
@@ -654,8 +927,32 @@ def main() -> int:
     client = PubMedClient(args.email, args.api_key)
 
     print(f"[search] {query}", file=sys.stderr)
-    total_hits, pmids = client.search(query, args.max_results)
-    print(f"[search] PubMed hits={total_hits:,}; retrieving={len(pmids):,}", file=sys.stderr)
+    out = Path(args.output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    crawl_windows: list[dict] = []
+    if args.all_results:
+        total_hits, pmids, crawl_windows = search_partitioned_pubmed(
+            client,
+            start_year=args.start_year,
+            end_year=args.end_year,
+            topic=args.topic,
+            extra=args.extra_query,
+            page_size=args.page_size,
+            max_results=args.max_results,
+            checkpoint_path=out / "crawl_checkpoint.json",
+            resume=args.resume,
+        )
+        retrieval_mode = "partitioned_all_results"
+    else:
+        total_hits, pmids = client.search(query, args.max_results)
+        retrieval_mode = "single_page"
+
+    print(
+        f"[search] PubMed hits={total_hits:,}; retrieving={len(pmids):,}; "
+        f"mode={retrieval_mode}",
+        file=sys.stderr,
+    )
 
     fetched = client.fetch(pmids)
     papers = [p for p in fetched if p.skku_affiliation_evidence]
@@ -671,9 +968,6 @@ def main() -> int:
     )
     print(f"[graph] edges={len(edges):,}", file=sys.stderr)
 
-    out = Path(args.output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-
     (out / "query.txt").write_text(query + "\n", encoding="utf-8")
     (out / "papers.json").write_text(
         json.dumps([asdict(p) for p in papers], ensure_ascii=False, indent=2),
@@ -681,6 +975,10 @@ def main() -> int:
     )
     (out / "edges.json").write_text(
         json.dumps([asdict(e) for e in edges], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out / "crawl_windows.json").write_text(
+        json.dumps(crawl_windows, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     write_csv(out / "papers.csv", [flat_paper(p) for p in papers])
@@ -691,6 +989,9 @@ def main() -> int:
     summary = {
         "query": query,
         "pubmed_total_hits": total_hits,
+        "retrieval_mode": retrieval_mode,
+        "retrieved_pmids": len(pmids),
+        "crawl_windows": len(crawl_windows),
         "verified_papers": len(papers),
         "edges": len(edges),
         "edge_types": dict(Counter(e.relation for e in edges)),
