@@ -56,6 +56,9 @@ class FollowedPaper:
     tracked_author_keys: list[str]
     current_affiliations: list[str]
     skku_current: bool
+    primary_domain: str
+    research_domains: list[str]
+    topic_terms: list[str]
     disease_terms: list[str]
     methods: list[str]
     data_types: list[str]
@@ -97,6 +100,8 @@ class ResearcherTrajectory:
     paper_count: int
     first_year: int
     last_year: int
+    top_domains: list[str]
+    top_topics: list[str]
     top_diseases: list[str]
     top_methods: list[str]
     top_data_types: list[str]
@@ -272,6 +277,9 @@ def make_followed_paper(
         tracked_author_keys=sorted(keys),
         current_affiliations=sorted(set(affiliations)),
         skku_current=skku_current,
+        primary_domain=annotation.primary_domain,
+        research_domains=annotation.research_domains,
+        topic_terms=annotation.topic_terms,
         disease_terms=annotation.disease_terms,
         methods=annotation.methods,
         data_types=annotation.data_types,
@@ -324,20 +332,87 @@ def make_continuation_edges(
     return edges
 
 
+def select_citation_check_pmids(
+    papers: dict[str, Paper],
+    paper_authors: dict[str, set[str]],
+    max_citation_checks: int,
+) -> list[str]:
+    """Select citation checks fairly across tracked researchers.
+
+    The previous PMID-sorted cap favored older records. This round-robin sampler
+    distributes checks across researchers and prefers recent papers within each
+    trajectory, then fills any remaining quota by recency.
+    """
+    if not papers:
+        return []
+
+    def sort_key(pmid: str):
+        paper = papers[pmid]
+        return (-(paper.year or 0), -(int(pmid) if pmid.isdigit() else 0))
+
+    all_ids = sorted(papers, key=sort_key)
+    if max_citation_checks <= 0 or max_citation_checks >= len(all_ids):
+        return all_ids
+
+    by_author: dict[str, list[str]] = defaultdict(list)
+    for pmid, keys in paper_authors.items():
+        if pmid not in papers:
+            continue
+        for key in keys:
+            by_author[key].append(pmid)
+    for key in by_author:
+        by_author[key] = sorted(set(by_author[key]), key=sort_key)
+
+    selected: list[str] = []
+    seen: set[str] = set()
+    index = 0
+    author_keys = sorted(by_author)
+    while len(selected) < max_citation_checks and author_keys:
+        added = False
+        for key in author_keys:
+            items = by_author[key]
+            if index >= len(items):
+                continue
+            pmid = items[index]
+            if pmid not in seen:
+                seen.add(pmid)
+                selected.append(pmid)
+                added = True
+                if len(selected) >= max_citation_checks:
+                    break
+        if not added and all(index >= len(by_author[key]) for key in author_keys):
+            break
+        index += 1
+
+    if len(selected) < max_citation_checks:
+        for pmid in all_ids:
+            if pmid in seen:
+                continue
+            selected.append(pmid)
+            seen.add(pmid)
+            if len(selected) >= max_citation_checks:
+                break
+
+    return selected
+
+
 def add_direct_citation_edges(
     client: PubMedClient,
     papers: dict[str, Paper],
+    paper_authors: dict[str, set[str]],
     edges: list[ContinuationEdge],
     max_citation_checks: int,
+    stats: dict | None = None,
 ) -> list[ContinuationEdge]:
     ids = set(papers)
     seen = {(e.source, e.target, e.author_key) for e in edges}
-    checked = 0
+    selected_ids = select_citation_check_pmids(
+        papers,
+        paper_authors,
+        max_citation_checks,
+    )
 
-    for pmid in sorted(ids):
-        if max_citation_checks and checked >= max_citation_checks:
-            break
-        checked += 1
+    for checked, pmid in enumerate(selected_ids, 1):
         refs = client.links(pmid, "pubmed_pubmed_refs")
         for ref in refs & ids:
             key = (ref, pmid, "citation")
@@ -356,8 +431,22 @@ def add_direct_citation_edges(
                 )
             )
         if checked % 25 == 0:
-            print(f"[citation] checked {checked}/{min(len(ids), max_citation_checks or len(ids))}", file=sys.stderr)
+            print(
+                f"[citation] balanced checks {checked}/{len(selected_ids)}",
+                file=sys.stderr,
+            )
 
+    if stats is not None:
+        stats.update(
+            {
+                "citation_check_strategy": "balanced_by_researcher_recent_first",
+                "citation_checks": len(selected_ids),
+                "citation_checkable_papers": len(ids),
+                "citation_coverage_fraction": round(
+                    len(selected_ids) / len(ids), 6
+                ) if ids else 0.0,
+            }
+        )
     return edges
 
 
@@ -518,6 +607,8 @@ def build_researcher_trajectories(
         if not papers:
             continue
 
+        domain_counts = Counter(value for paper in papers for value in paper.research_domains)
+        topic_counts = Counter(value for paper in papers for value in paper.topic_terms)
         disease_counts = Counter(value for paper in papers for value in paper.disease_terms)
         method_counts = Counter(value for paper in papers for value in paper.methods)
         data_counts = Counter(value for paper in papers for value in paper.data_types)
@@ -536,6 +627,8 @@ def build_researcher_trajectories(
         years = [p.year for p in papers if p.year]
         first_year = min(years) if years else 0
         last_year = max(years) if years else 0
+        top_domains = [x for x, _ in domain_counts.most_common(5)]
+        top_topics = [x for x, _ in topic_counts.most_common(8)]
         top_diseases = [x for x, _ in disease_counts.most_common(5)]
         top_methods = [x for x, _ in method_counts.most_common(5)]
         top_data = [x for x, _ in data_counts.most_common(5)]
@@ -543,6 +636,10 @@ def build_researcher_trajectories(
         summary_parts = []
         if first_year and last_year:
             summary_parts.append(f"{first_year}–{last_year}")
+        if top_domains:
+            summary_parts.append("domain: " + ", ".join(top_domains[:2]))
+        if top_topics:
+            summary_parts.append("topics: " + ", ".join(top_topics[:2]))
         if stage_path:
             summary_parts.append("stage: " + " → ".join(stage_path))
         if top_methods:
@@ -562,6 +659,8 @@ def build_researcher_trajectories(
                 paper_count=len(papers),
                 first_year=first_year,
                 last_year=last_year,
+                top_domains=top_domains,
+                top_topics=top_topics,
                 top_diseases=top_diseases,
                 top_methods=top_methods,
                 top_data_types=top_data,
@@ -588,6 +687,8 @@ def render_research_trajectory_html(
     nodes = []
     for paper in followed:
         short_title = paper.title if len(paper.title) <= 70 else paper.title[:67] + "..."
+        domain = paper.primary_domain or "not classified"
+        topics = ", ".join(paper.topic_terms[:3]) or "not classified"
         disease = ", ".join(paper.disease_terms[:3]) or "not classified"
         methods = ", ".join(paper.methods[:3]) or "not classified"
         data_types = ", ".join(paper.data_types[:3]) or "not classified"
@@ -597,6 +698,8 @@ def render_research_trajectory_html(
             f"PMID: {paper.pmid}<br>"
             f"Year: {paper.year or 'Unknown'}<br>"
             f"Researchers: {tracked}<br>"
+            f"Domain: {domain}<br>"
+            f"Topics: {topics}<br>"
             f"Stage: {paper.research_stage}<br>"
             f"Disease: {disease}<br>"
             f"Methods: {methods}<br>"
@@ -836,12 +939,14 @@ def write_report(
             aff = "SKKU" if paper.skku_current else "non-SKKU / other affiliation"
             methods = ", ".join(paper.methods[:3]) or "method not classified"
             data_types = ", ".join(paper.data_types[:3]) or "data not classified"
+            domain = paper.primary_domain or "domain not classified"
+            topics = ", ".join(paper.topic_terms[:2]) or "topic not classified"
             disease = ", ".join(paper.disease_terms[:2]) or "phenotype not classified"
             lines.append(
                 f"- {paper.year or 'Unknown'} · PMID {paper.pmid} · "
                 f"[{paper.title}]({paper.pubmed_url}) · {aff} · "
-                f"stage={paper.research_stage} · disease={disease} · "
-                f"method={methods} · data={data_types}"
+                f"domain={domain} · topics={topics} · stage={paper.research_stage} · "
+                f"disease={disease} · method={methods} · data={data_types}"
             )
             lines.append(f"  - Question: {paper.research_question}")
         lines.append("")
@@ -913,12 +1018,20 @@ def main() -> int:
     followed.sort(key=lambda p: (p.year, p.pmid), reverse=True)
 
     edges = make_continuation_edges(papers, paper_authors, registry_map)
+    citation_stats: dict = {
+        "citation_check_strategy": "disabled",
+        "citation_checks": 0,
+        "citation_checkable_papers": len(papers),
+        "citation_coverage_fraction": 0.0,
+    }
     if args.with_citations:
         edges = add_direct_citation_edges(
             client,
             papers,
+            paper_authors,
             edges,
             args.max_citation_checks,
+            stats=citation_stats,
         )
 
     lineage_edges = build_research_lineage_edges(
@@ -949,6 +1062,10 @@ def main() -> int:
         row["tracked_authors"] = "; ".join(item.tracked_authors)
         row["tracked_author_keys"] = "; ".join(item.tracked_author_keys)
         row["current_affiliations"] = " | ".join(item.current_affiliations)
+        row["research_domains"] = "; ".join(item.research_domains)
+        row["topic_terms"] = "; ".join(item.topic_terms)
+        row["research_domains"] = "; ".join(item.research_domains)
+        row["topic_terms"] = "; ".join(item.topic_terms)
         row["disease_terms"] = "; ".join(item.disease_terms)
         row["methods"] = "; ".join(item.methods)
         row["data_types"] = "; ".join(item.data_types)
@@ -968,6 +1085,8 @@ def main() -> int:
     trajectory_rows = []
     for item in trajectories:
         row = asdict(item)
+        row["top_domains"] = "; ".join(item.top_domains)
+        row["top_topics"] = "; ".join(item.top_topics)
         row["top_diseases"] = "; ".join(item.top_diseases)
         row["top_methods"] = "; ".join(item.top_methods)
         row["top_data_types"] = "; ".join(item.top_data_types)
@@ -1013,12 +1132,14 @@ def main() -> int:
     write_report(out / "continuation.md", registry, followed, edges, lineage_edges)
 
     summary = {
-        "followup_version": 3,
+        "followup_version": 4,
         "registry_policy": "conservative_affiliation_then_seed_paper_count_ranking",
         "start_year": args.start_year,
         "end_year": args.end_year,
         "max_authors": args.max_authors,
         "max_per_author": args.max_per_author,
+        "max_citation_checks": args.max_citation_checks,
+        **citation_stats,
         "tracked_researchers": len(registry),
         "high_confidence_orcid": sum(x.confidence == "high" for x in registry),
         "low_confidence_name": sum(x.confidence == "low" for x in registry),
@@ -1035,6 +1156,7 @@ def main() -> int:
         "papers_with_methods": sum(bool(a.methods) for a in annotations.values()),
         "papers_with_data_types": sum(bool(a.data_types) for a in annotations.values()),
         "papers_with_disease_terms": sum(bool(a.disease_terms) for a in annotations.values()),
+        "primary_domain_counts": dict(Counter(a.primary_domain for a in annotations.values())),
         "research_stages": dict(Counter(a.research_stage for a in annotations.values())),
         "researcher_trajectories": len(trajectories),
         "researchers_with_strong_lineage": sum(
