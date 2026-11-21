@@ -47,7 +47,8 @@ def main():
                 probes[code]=(sym,cls)
                 gene_probe_count[sym]+=1
     if not probes:raise RuntimeError('STOP: PKC has no RTS mappings')
-    audit.update({'pkc_target_count':len(doc.get('Targets',[])),'pkc_unique_RTS':len(probes),'pkc_CodeClass_counts':dict(classes), 'mapped_candidate_genes':[g for g in TARGETS if g in gene_probe_count]})
+    audit.update({'pkc_target_count':len(doc.get('Targets',[])),'pkc_unique_RTS':len(probes),'pkc_CodeClass_counts':dict(classes), 'mapped_candidate_genes':[g for g in TARGETS if g in gene_probe_count],
+                  'mapped_target_gene_probe_counts':{g:gene_probe_count[g] for g in TARGETS if g in gene_probe_count}})
     roi_rows=[];qc_rows=[];rt_status=collections.Counter();slides=collections.defaultdict(lambda:collections.Counter())
     all_rts=set();first_count_summary={};seen=set();sample_names=[];detected_targets=collections.Counter();bad_q3=[]
     with tarfile.open(fileobj=io.BytesIO(tar),mode='r:*') as tf:
@@ -88,22 +89,41 @@ def main():
             endogenes=[t['DisplayName'] for t in doc.get('Targets',[]) if str(t.get('CodeClass','')).lower().startswith('endo')]
             endocount=[counts.get(g,0) for g in endogenes]
             q3=quartile(endocount)
+            q90=quartile(endocount,q=0.90)
             if q3<=0:bad_q3.append(accession)
             neg_med=statistics.median(negative) if negative else None
+            # Exploratory WTA background estimate, NOT the paper's official LOQ.
+            # Zeros are clamped to 1 before geometric statistics to keep the
+            # transformation deterministic and conservative in low-count ROI.
+            neg_log=[math.log(max(1.0,float(v))) for v in negative]
+            neg_geom=math.exp(statistics.mean(neg_log)) if len(neg_log)>=2 else None
+            neg_geosd=math.exp(statistics.stdev(neg_log)) if len(neg_log)>=2 else None
+            neg_loq=max(2.0,neg_geom*neg_geosd**2) if neg_geom is not None else None
+            q3_vs_neg=(q3/neg_geom) if neg_geom and q3>0 else None
             title=gsm[accession].get('title','')
             condition=gsm[accession].get('characteristics_1','').replace('disease:','').strip()
             stage='Early' if condition.startswith('Early_HS_') else 'Late' if condition.startswith('Late_HS_') else 'Control' if condition.startswith('Control_') else 'Other'
             tissue=(condition.replace('Early_HS_','').replace('Late_HS_','').replace('Control_','')) if stage!='Other' else condition
             slide=title.split('|')[0].strip()
             if stage!='Other' and stage!='Control':slides[slide][stage]+=1
-            qc={'gsm':accession,'slide_label_not_donor':slide,'roi_title':title,'condition':condition,'stage':stage,'tissue_compartment':tissue,'n_codes':len(codes),'total_RTS_counts':sum(codes.values()),'n_endogenous_gene_detected':sum(x>0 for x in endocount),'Q3_endogenous_raw':round(q3,3),'q3_usable':int(q3>0),'negative_probe_median':neg_med,'n_negative_probes':len(negative)}
+            qc={'gsm':accession,'slide_label_not_donor':slide,'roi_title':title,'condition':condition,'stage':stage,'tissue_compartment':tissue,'n_codes':len(codes),'total_RTS_counts':sum(codes.values()),'n_endogenous_gene_detected':sum(x>0 for x in endocount),'Q3_endogenous_raw':round(q3,3),'q3_usable':int(q3>0),'negative_probe_median':neg_med,'n_negative_probes':len(negative),
+                'negative_probe_geomean_clamp1':round(neg_geom,6) if neg_geom is not None else '',
+                'negative_probe_geosd_clamp1':round(neg_geosd,6) if neg_geosd is not None else '',
+                'exploratory_LOQ_clamp1_geomean_geosd2':round(neg_loq,6) if neg_loq is not None else '',
+                'Q3_div_negative_geomean':round(q3_vs_neg,6) if q3_vs_neg is not None else '',
+                'Q90_endogenous_raw':round(q90,6)}
             qc_rows.append(qc)
             for gene in TARGETS:
                 if gene not in gene_probe_count:continue
                 raw=counts.get(gene,0)
                 # Scale each ROI to reference Q3 to make intensity comparisons descriptive only.
                 # Raw Q3-normalized count as a ratio; no global mean need be guessed.
-                roi_rows.append({'gsm':accession,'slide_label_not_donor':slide,'stage':stage,'condition':condition,'compartment':tissue,'gene':gene,'raw_count':raw,'q3_scaled_ratio':round(raw/q3,6) if q3>0 else None,'log2_ratio_plus1':round(math.log2(1+raw/q3),6) if q3>0 else None,'detected':int(raw>0)})
+                roi_rows.append({'gsm':accession,'slide_label_not_donor':slide,'stage':stage,'condition':condition,'compartment':tissue,'gene':gene,'raw_count':raw,'gene_probe_count':gene_probe_count[gene],
+                                 'q3_scaled_ratio':round(raw/q3,6) if q3>0 else None,
+                                 'q90_scaled_ratio':round(raw/q90,6) if q90>0 else None,
+                                 'log2_ratio_plus1':round(math.log2(1+raw/q3),6) if q3>0 else None,
+                                 'detected':int(raw>0),
+                                 'above_exploratory_LOQ':int(raw>=neg_loq) if neg_loq is not None and gene_probe_count[gene]==1 else ''})
     if seen!=set(gsm):raise RuntimeError('GSM correspondence not 204/204: '+str(len(seen)))
     all_slides=collections.Counter(x['slide_label_not_donor'] for x in qc_rows)
     # descriptive only: groups of ROI, no statistical replicates
@@ -130,7 +150,8 @@ def main():
     write_csv(out/'early_late_shared_compartment_descriptive.csv',contrasts)
     write_csv(out/'slide_stage_counts.csv',[{'slide_label_not_donor':slide,'early_ROI':v.get('Early',0),'late_ROI':v.get('Late',0),'is_mixed':bool(v.get('Early',0) and v.get('Late',0))} for slide,v in slides.items()])
     write_csv(out/'geo_roi_metadata.csv',samples)
-    audit.update({'GSMs_matched':len(seen),'ROI_count':len(qc_rows),'slide_labels_n':len(all_slides),'slide_label_counts':dict(all_slides),'ROI_group_counts':dict(collections.Counter(x['stage'] for x in qc_rows)),'shared_compartment_contrasts_n':len(contrasts),'q3_unusable_ROI_count':len(bad_q3),'q3_unusable_GSMs':bad_q3[:50],'quantification':{'definition':'raw DCC RTS counts summed by PKC DisplayName (endogenous targets); per-ROI ratio = gene raw counts / Q3 of all endogenous gene counts; no donor adjustment','unknown_probe_instances':rt_status['unknown_probe_instances'],'parsed_probe_instances':rt_status['parsed_probe_instances']},'first_dcc':first_count_summary})
+    audit.update({'GSMs_matched':len(seen),'ROI_count':len(qc_rows),'slide_labels_n':len(all_slides),'slide_label_counts':dict(all_slides),'ROI_group_counts':dict(collections.Counter(x['stage'] for x in qc_rows)),'shared_compartment_contrasts_n':len(contrasts),'q3_unusable_ROI_count':len(bad_q3),'q3_unusable_GSMs':bad_q3[:50],'exploratory_loq_method':{'definition':'max(2, negative_probe_geoMean*geoSD^2) from raw DCC negative probes, clamp counts below 1 before log, sample SD; signal baseline only, not verified author LOQ; use only genes with exactly one RTS probe','missing_negative_probes_gsm':sum(1 for r in qc_rows if not r['exploratory_LOQ_clamp1_geomean_geosd2'])},
+                  'quantification':{'definition':'raw DCC RTS counts summed by PKC DisplayName (endogenous targets); per-ROI ratio = gene raw counts / Q3 of all endogenous gene counts; no donor adjustment','unknown_probe_instances':rt_status['unknown_probe_instances'],'parsed_probe_instances':rt_status['parsed_probe_instances']},'first_dcc':first_count_summary})
     audit['status']='GO_ROI_TARGETED_DESCRIPTIVE_ONLY_HOLD_DONOR_LEVEL_INFERENCE'
     audit['clinical_limitations']=['No explicit 15-patient donor map in GEO series/sample metadata','Paper uses 156 ROI whereas GEO hosts 204; QC-filtered ROI list not reconstructed','ROI from same sample/slide not independent patients','No secukinumab treatment outcomes or patient-level pairing to GSE213761','Cannot estimate valid FDR for disease stage comparisons without donor group ID']
     (out/'RECONSTRUCTION_AUDIT.json').write_text(json.dumps(audit,indent=2,ensure_ascii=False),encoding='utf8')
