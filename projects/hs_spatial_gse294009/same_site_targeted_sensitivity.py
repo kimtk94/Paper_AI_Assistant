@@ -23,9 +23,11 @@ STAGE_SCENARIOS={
  "All_sites_exclude_HS12":(lambda x:x["patient"]!="HS12","author_stage_from_roi"),
 }
 FOCUS={
- ("Inflammatory Aggregate_SuperficialDermis","CCL20"):"LATE_HIGHer_in_source",
- ("Inflammatory Aggregate_SuperficialDermis","IL17F"):"LATE_HIGHER_in_source",
- ("Inflammatory Aggregate_SuperficialDermis","TNF"):"LATE_HIGHER_in_source",
+ ("Inflammatory Aggregate_SuperficialDermis","CXCL13"):"EARLY_HIGHER",
+ ("Inflammatory Aggregate_SuperficialDermis","CD79A"):"EARLY_HIGHER",
+ ("Inflammatory Aggregate_SuperficialDermis","CCL20"):"LATE_HIGHER",
+ ("Inflammatory Aggregate_SuperficialDermis","IL17F"):"LATE_HIGHER",
+ ("Inflammatory Aggregate_SuperficialDermis","TNF"):"LATE_HIGHER",
 }
 def load(path):
     with open(path,newline="",encoding="utf8") as handle:return list(csv.DictReader(handle))
@@ -138,12 +140,30 @@ def main():
     directional=[]
     for (comp,gene),expect in FOCUS.items():
         r=primary.get((comp,gene))
-        directional.append({"compartment":comp,"gene":gene,"paper_late_v_early_direction":"LATE_HIGHER",
+        directional.append({"compartment":comp,"gene":gene,"paper_late_v_early_direction":expect,
                             "observed_direction":r["direction"] if r else "NO_MATCHED_DONORS",
-                            "matching":("CONSISTENT" if r and r["direction"]=="LATE_HIGHER" else
-                                        "OPPOSITE" if r and r["direction"]=="EARLY_HIGHER" else "UNRESOLVED"),
-                            "source_context":"PMC13552446 late-vs-early expression changes in superficial dermis",
+                            "matching":("CONSISTENT" if r and r["direction"]==expect else
+                                        "OPPOSITE" if r and r["direction"]!="TIE" else "UNRESOLVED"),
+                            "source_context":"PMC13552446, Figure 4 early-vs-late changes in superficial dermis",
                             "status":"DIRECTIONAL_DESCRIPTIVE_NOT_QUANT_REPLICATION"})
+    indexed={(r["scenario"],r["compartment"],r["gene"]):r for r in outrows}
+    sensitivity=[]
+    for (comp,gene),base in sorted(primary.items()):
+        alternative={}
+        for alt in ("Yonsei_FFPE_S2_include_HS12","Yonsei_FFPE_S1_include_HS12","All_sites_exclude_HS12"):
+            item=indexed.get((alt,comp,gene))
+            alternative[alt]=item
+        all_available=[x for x in alternative.values() if x is not None]
+        stable_all=bool(all_available) and all(x["direction"]==base["direction"] for x in all_available)
+        sensitivity.append({"compartment":comp,"gene":gene,"panel":FAMILIES[gene],
+            "primary_early_donors":base["early_donors"],"primary_late_donors":base["late_donors"],
+            "primary_effect":base["late_vs_early_log2_ratio_pseudo0p1"],"primary_direction":base["direction"],
+            "all_scenarios_same_direction":stable_all,
+            **{alt+"_effect":x["late_vs_early_log2_ratio_pseudo0p1"] if x else ""
+               for alt,x in alternative.items()},
+            **{alt+"_direction":x["direction"] if x else "NO_MATCHED_DONORS"
+               for alt,x in alternative.items()}})
+    write(out/"HS_SCENARIO_DIRECTION_SENSITIVITY.csv",sensitivity)
     write(out/"HS_SAME_SITE_DONOR_PANEL.csv",outrows)
     write(out/"HS_PRIMARY_GENE_SUPPORT.csv",support)
     write(out/"HS_PAPER_DIRECTIONAL_AUDIT.csv",directional)
@@ -156,6 +176,8 @@ def main():
            "panels":{k:list(v) for k,v in PANEL.items()},
            "measured_target_genes":sorted(available),"n_primary_comparisons":num_primary,
            "n_high_support_stable_non_sparse":len(high),
+           "n_primary_same_direction_all_alternative_scenarios":sum(x["all_scenarios_same_direction"] for x in sensitivity),
+           "n_comparable_scenario_contrasts":len(sensitivity),
            "status":"TARGETED_DESCRIPTIVE_GO_CONFIRMED_DE_HOLD",
            "limitations":["Source ratio not official author LOQ/Q3 normalization",
                           "Preselected targeted panel is not a transcriptome-wide test",
@@ -183,7 +205,16 @@ def main():
             "but not every gene is expected to be higher in early than late.",
             "Patient-level descriptive robustness alone cannot validate 156-ROI differential expression.",""]
     (out/"HS_SENSITIVITY_REPORT.md").write_text("\n".join(lines),encoding="utf8")
+    selected=[{"gene":x["gene"],"compartment":x["compartment"],
+                "direction":x["primary_direction"],"primary":x["primary_effect"],
+                "S2_include_HS12":x["Yonsei_FFPE_S2_include_HS12_effect"],
+                "S1_include_HS12":x["Yonsei_FFPE_S1_include_HS12_effect"],
+                "All_sites":x["All_sites_exclude_HS12_effect"],
+                "all_scenarios_same_direction":x["all_scenarios_same_direction"]}
+               for x in sensitivity if x["compartment"] in ("Inflammatory Aggregate_DeepDermis","Inflammatory Aggregate_SuperficialDermis") and x["gene"] in ("CXCL13","MS4A1","CD79A","JCHAIN","CCL20","IL17F","TNF")]
     print(json.dumps({"status":audit["status"],"primary_n":num_primary,
+                      "scenario_direction_consistent_n":audit["n_primary_same_direction_all_alternative_scenarios"],
+                      "selected_scenario_sensitivity":selected,
                       "high_support_stable":len(high),"high_support_genes":[{"gene":r["gene"],"compartment":r["compartment"],"n":str(r["early_donors"])+"/"+str(r["late_donors"]),"direction":r["direction"],"log2_ratio":r["late_vs_early_log2_ratio_pseudo0p1"]} for r in high],
                       "paper_directional":directional},ensure_ascii=False))
 
