@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'projects/hs_spatial_gse294009/paper_supp_linkage.py'
+      - 'projects/hs_spatial_gse294009/hs_s1s2_site_stage_qc.py'
+      - 'projects/hs_spatial_gse294009/author_s2_geo_crosswalk.csv'
       - '.github/workflows/hs-spatial-supplement-linkage.yml'
   workflow_dispatch:
 permissions:
@@ -16,10 +18,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Syntax check
-        run: python -m py_compile projects/hs_spatial_gse294009/paper_supp_linkage.py
-      - name: Resolve publication supplements and provenance
+      - name: Syntax checks
+        run: |
+          python -m py_compile projects/hs_spatial_gse294009/paper_supp_linkage.py
+          python -m py_compile projects/hs_spatial_gse294009/hs_s1s2_site_stage_qc.py
+      - name: Retrieve official publication supplementary XLSX and provenance
         run: python projects/hs_spatial_gse294009/paper_supp_linkage.py --out output/hs_spatial_supp
+      - name: Verify published GSM accessions and stage/site sensitivity
+        run: python projects/hs_spatial_gse294009/hs_s1s2_site_stage_qc.py
       - name: Publish bounded public evidence
         uses: actions/upload-artifact@v4
         if: always()
