@@ -25,6 +25,14 @@ SAMPLE_GROUPS = {
     "GSM8671656": ("dienogest", 3), "GSM8671657": ("untreated", 3),
     "GSM8671658": ("dienogest", 4), "GSM8671659": ("untreated", 4),
 }
+# Numeric identifiers appear in GSE283755 processed XLSX; cross-check against each GEO GSM Description.
+SAMPLE_ID_LOOKUP = {
+    "GSM8671652": "10250742", "GSM8671653": "10532202",
+    "GSM8671654": "10638608", "GSM8671655": "10925077",
+    "GSM8671656": "11019271", "GSM8671657": "2449152",
+    "GSM8671658": "7139439", "GSM8671659": "8127689",
+}
+
 
 
 def download(dest: Path, manifest: dict) -> None:
@@ -66,6 +74,10 @@ def canonical_sample(col: str):
     for gsm, (group, idx) in SAMPLE_GROUPS.items():
         if gsm.lower() in c:
             return gsm, group, idx
+    for gsm, identifier in SAMPLE_ID_LOOKUP.items():
+        if re.search(r"(?<![0-9])" + re.escape(identifier) + r"(?![0-9])", c):
+            group, idx = SAMPLE_GROUPS[gsm]
+            return gsm, group, idx
     # only accept unambiguous published title aliases
     pattern = r"(?:ems[\W_]*)?(none|untreated|visanne|dienogest)[\W_]*([1-4])(?!\d)"
     hits = re.findall(pattern, c)
@@ -100,6 +112,9 @@ def find_gene_col(df):
 
 def audit(input_path: Path, dest: Path, manifest: dict):
     excel = pd.ExcelFile(input_path, engine="openpyxl")
+    if len(SAMPLE_ID_LOOKUP) != 8 or len(set(SAMPLE_ID_LOOKUP.values())) != 8:
+        raise ValueError("Sample ID mapping is not one-to-one")
+    manifest["sample_map"] = [{"gsm": gsm, "internal_id": SAMPLE_ID_LOOKUP[gsm], "group": group, "replicate": rep} for gsm,(group,rep) in SAMPLE_GROUPS.items()]
     candidates = []
     inventory = []
     for sheet in excel.sheet_names:
@@ -142,7 +157,15 @@ def audit(input_path: Path, dest: Path, manifest: dict):
     numbers = numbers.loc[nonempty]
     identifiers = identifiers.loc[nonempty]
     numbers.columns = order
-    numbers = numbers.groupby(identifiers.values, sort=False).mean()
+    # Gene symbol duplicates: sum counts, instead of averaging, for count data; leave non-count metrics averaged.
+    if kind == "count":
+        if not np.allclose(numbers.to_numpy(), np.round(numbers.to_numpy()), atol=1e-7):
+            manifest["analysis"].update(status="BLOCKED_NONINTEGER_COUNTS", reason="Read_Count column is not integer; cannot use DESeq2 directly")
+            return
+        numbers = numbers.groupby(identifiers.values, sort=False).sum()
+        numbers = numbers.round().astype("int64")
+    else:
+        numbers = numbers.groupby(identifiers.values, sort=False).mean()
     if len(numbers) < 1000:
         manifest["analysis"].update(status="BLOCKED_TOO_FEW_GENES", n_genes=int(len(numbers)))
         return
@@ -152,6 +175,8 @@ def audit(input_path: Path, dest: Path, manifest: dict):
         s = numbers[gsm]
         props.append({"gsm": gsm, "group": group, "replicate": idx, "metric": kind, "sum": float(s.sum()), "median": float(s.median()), "zero_fraction": float((s == 0).mean()), "n_features": int(s.size)})
     pd.DataFrame(props).to_csv(dest / "sample_qc.csv", index=False)
+    if kind == "count":
+        numbers.to_csv(dest / "raw_counts_by_gene_symbol.csv", index_label="gene")
     # For count-like values use library-size normalized logCPM; otherwise log2(value+1).
     # This is NOT DESeq2 or confirmatory differential expression.
     if kind == "count":
@@ -220,7 +245,7 @@ def main():
         fh.write("Next gate: verify original raw counts and gene IDs, DESeq2 reproduction with design ~ treatment only, "
                  "independent cell-source contextualization and planned wet-lab validation.\n")
     print(json.dumps(manifest,ensure_ascii=False,indent=2))
-    if manifest["analysis"]["status"] in ("FAILED", "BLOCKED_GENE_IDENTIFIER", "BLOCKED_TOO_FEW_GENES"):
+    if manifest["analysis"]["status"] in ("FAILED", "BLOCKED_GENE_IDENTIFIER", "BLOCKED_TOO_FEW_GENES", "BLOCKED_NONINTEGER_COUNTS"):
         raise SystemExit(1)
 
 if __name__=="__main__":main()
