@@ -113,6 +113,27 @@ def main():
                and x['cells'][3]=='Seoul National University' for x in prior):
         raise ValueError('STOP: historical ROI provenance / stage / institution mismatch')
     historic_comp=collections.Counter(x['cells'][2] for x in prior)
+    historic_rows=[]
+    for x in prior:
+        v=x['cells']
+        if len(v)<8 or not str(v[7]).strip():
+            raise ValueError('STOP: original S2 historic ROI label missing')
+        historic_rows.append({
+            'source_paper_doi':'10.1093/bjd/ljad274',
+            'patient_id':v[1],
+            'author_ROI_label':str(v[7]).strip(),
+            'ROI_composite_key':v[1]+':'+str(v[7]).strip(),
+            'author_compartment':v[2],
+            'institution':v[3],
+            'expression_value_available':'NO',
+            'original_GSM':'',
+            'quant_source_status':'HOLD_NO_ORIGINAL_DCC'
+        })
+    if len({r['ROI_composite_key'] for r in historic_rows})!=24:
+        raise ValueError('STOP: historical 24 patient/ROI labels non-unique')
+    with (ROOT/'HISTORIC_24_EXPECTED_ROI_MANIFEST.csv').open('w',newline='',encoding='utf-8') as dest:
+        writer=csv.DictWriter(dest,fieldnames=list(historic_rows[0]))
+        writer.writeheader();writer.writerows(historic_rows)
     absent=sorted(set(gsm)-set(found))
     if absent:raise ValueError('STOP: '+str(len(absent))+' S2 GSM not independently found in official XLSX')
     exact=sum(any(hit['same_row_patient'] for hit in row) for row in found.values())
