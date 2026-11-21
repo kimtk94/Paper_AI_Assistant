@@ -25,6 +25,17 @@ jobs:
         run: python projects/top7_remaining4/geo_baseline.py --role '${{ matrix.role }}' --out 'output/top7_remaining4/${{ matrix.role }}'
       - name: Refine patient/ROI and candidate matrix mapping
         run: python projects/top7_remaining4/refine.py --role '${{ matrix.role }}' --out 'output/top7_remaining4/${{ matrix.role }}'
+      - name: Install DESeq2 only for verified HS paired lesion samples
+        if: matrix.role == 'hs_therapy'
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y r-bioc-deseq2
+      - name: Paired HS anti-TNF lesion DESeq2
+        if: matrix.role == 'hs_therapy'
+        run: Rscript projects/top7_remaining4/hs_paired_deseq2.R output/top7_remaining4/hs_therapy
+      - name: Remove raw matrices from CI artifact
+        if: matrix.role == 'hs_therapy'
+        run: rm -f output/top7_remaining4/hs_therapy/hs_therapy_paired_counts.csv
       - uses: actions/upload-artifact@v4
         if: always()
         with:
