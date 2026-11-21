@@ -1,0 +1,51 @@
+name: HS JCHAIN full nuisance donor LOO and slide direction final audit
+on:
+  pull_request:
+    paths:
+      - 'projects/hs_spatial_gse294009/verify_full_refit_slide_artifact.py'
+      - '.github/workflows/hs-geomx-final-donor-slide-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify-44-actually-fitted-models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download published-in-PR source pinned actual R model output
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44925755817
+          name: hs-132-full-nuisance-LOO-and-slide-sensitivity
+          github-token: ${{ github.token }}
+          path: output/hs_standr_full_refit
+      - name: Verify all 44 actual model fits, slide contrast, 40 positive donor holdouts
+        run: |
+          python -m py_compile projects/hs_spatial_gse294009/verify_full_refit_slide_artifact.py
+          python projects/hs_spatial_gse294009/verify_full_refit_slide_artifact.py --input output/hs_standr_full_refit/HS_FULL_REFIT_SLIDE_DONOR_LOO_AUDIT.json --out output/hs_full_refit_final_gate
+      - name: Independent fail-closed scientific conclusion status
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/hs_full_refit_final_gate/HS_FINAL_QC_GATE.json')
+          a=json.loads(p.read_text())
+          assert a['status']=='EXPLORATORY_FULL_REFIT_AND_SLIDE_DIRECTION_PASS__PAPER_AND_BIOMARKER_HOLD'
+          assert (a['n_full_model_success'],a['n_fold_model_success'],a['n_unique_heldout_donors'])==(4,40,10)
+          assert a['n_fold_direction_reversal']==0
+          assert not a['study_replication'] and not a['differential_expression_significance']
+          assert all(x['baseline_effect']>0 and x['loo_min']>0 for x in a['model_summary'])
+          print('VALIDATED_44_MODELS_40_DONOR_FOLDS__EXPLORATORY_ONLY')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hs-final-44-full-nuisance-models-JCHAIN-direction-QC
+          path: output/hs_full_refit_final_gate/
+          retention-days: 45
+          if-no-files-found: error
