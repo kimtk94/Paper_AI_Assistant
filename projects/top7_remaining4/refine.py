@@ -152,6 +152,16 @@ def therapy(out):
                           'n_responder_pairs':len(responder_deltas),'responder_median_delta':round(float(np.median(responder_deltas)),4) if responder_deltas else None,
                           'n_nonresponder_pairs':len(nonresponder_deltas),'nonresponder_median_delta':round(float(np.median(nonresponder_deltas)),4) if nonresponder_deltas else None})
     audit['candidate_gene_analysis']=candidate
+    # Explicitly mapped 14 patient-paired lesional specimens for DESeq2.
+    les_pairs.sort(key=lambda x:int(x[0]['patient']))
+    selected=[s for a,b in les_pairs for s in (a,b)]
+    columns=[s['column'] for s in selected]
+    meta_rows=[{'column':s['column'],'patient':s['patient'],'visit':s['visit'], 'responder':s['responder'],'gsm':s['gsm']} for s in selected]
+    if len(set(columns))==len(columns) and len(columns)==len(les_pairs)*2:
+        mat.loc[:,columns].to_csv(out/'hs_therapy_paired_counts.csv',index=True,index_label='gene_entrez_id')
+        with open(out/'hs_therapy_paired_metadata.csv','w',newline='',encoding='utf8') as f:
+            w=csv.DictWriter(f,fieldnames=list(meta_rows[0]));w.writeheader();w.writerows(meta_rows)
+        audit['paired_model_input']='READY_COUNT_VERIFIED'
     if candidate:
         with open(out/'hs_therapy_paired_exploratory.csv','w',newline='',encoding='utf8') as f:
             w=csv.DictWriter(f,fieldnames=list(candidate[0]));w.writeheader();w.writerows(candidate)
