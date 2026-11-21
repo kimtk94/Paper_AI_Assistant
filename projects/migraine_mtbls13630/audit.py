@@ -65,12 +65,26 @@ def table_audit(raw:bytes):
             row_shape=(list(data[0])[:20] if data and isinstance(data[0],dict) else
                        type(data[0]).__name__ if data else 'empty')
         elif isinstance(data,dict):
-            rows=len(data)
-            row_shape=list(data)[:20]
+            nested=data.get('rows')
+            if isinstance(nested,list):
+                rows=len(nested)
+                row_shape=(list(nested[0])[:20] if nested and isinstance(nested[0],dict) else
+                          type(nested[0]).__name__ if nested else 'empty')
+            elif isinstance(nested,dict):
+                rows=len(nested)
+                row_shape=list(nested)[:20]
+            else:
+                rows=None
+                row_shape=list(data)[:20]
         else:
             rows=None; row_shape=type(data).__name__
+        abund=doc.get('sample_abundance')
+        abundance_shape=({'type':'dict','keys':list(abund)[:25], 'n_keys':len(abund)} if isinstance(abund,dict)
+                         else {'type':'list','length':len(abund)} if isinstance(abund,list)
+                         else {'type':type(abund).__name__})
         return {'status':'PARSED_JSON','n_rows':rows,'n_columns':len(cols),
-                'column_names':cols[:50],'keys':list(doc)[:20],'row_shape':row_shape}
+                'column_names':cols[:50],'keys':list(doc)[:20],'row_shape':row_shape,
+                'sample_abundance_shape':abundance_shape}
     text=raw.decode('utf-8-sig',errors='replace')
     first=text.splitlines()[:4]
     if not first:return {'status':'EMPTY'}
