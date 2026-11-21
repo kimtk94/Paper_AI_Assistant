@@ -29,3 +29,21 @@ write.csv(summary,file.path(out,'deseq2_summary.csv'),row.names=FALSE)
 write.csv(data.frame(gsm=rownames(meta),group=as.character(meta$group),size_factor=sizeFactors(dds)),file.path(out,'deseq2_size_factors.csv'),row.names=FALSE)
 writeLines(c('# GSE283755 independent DESeq2 audit',paste('Bioconductor DESeq2 version',as.character(packageVersion('DESeq2'))),'Design ~ group, 4 untreated vs 4 dienogest-exposed; separate patients','Input: GEO Read_Count values summed across duplicate gene symbols, prefiltered genes with >=10 counts in >=4 samples','Not guaranteed to reproduce original 406 DEGs: feature summarization, filtering, package versions, and analysis details may differ.','',paste(summary$criterion, summary$value,sep=': ',collapse='\n')),file.path(out,'DESEQ2_REPORT.md'))
 print(summary)
+
+
+# Additional original-publication filter comparison. Authors excluded genes with zero reads in >3 samples within either group.
+# For n=4/group, this means at least one positive count in each group.
+zero_filter_keep <- rowSums(mat[,meta$group=='untreated',drop=FALSE]>0)>=1 & rowSums(mat[,meta$group=='dienogest',drop=FALSE]>0)>=1
+if(sum(zero_filter_keep)<10000) stop('Unexpected author-like zero filtering resulted in too few genes')
+dds_original_filter <- DESeqDataSetFromMatrix(countData=mat[zero_filter_keep,,drop=FALSE],colData=meta,design=~group)
+dds_original_filter <- DESeq(dds_original_filter,quiet=TRUE)
+res_original_filter <- results(dds_original_filter,contrast=c('group','dienogest','untreated'),alpha=.05)
+res_b <- as.data.frame(res_original_filter)
+res_b$gene <- rownames(res_b)
+res_b <- res_b[,c('gene','baseMean','log2FoldChange','lfcSE','stat','pvalue','padj')]
+res_b <- res_b[order(res_b$padj,res_b$pvalue,na.last=TRUE),,drop=FALSE]
+write.csv(res_b,file.path(out,'deseq2_author_filter_gene_results.csv'),row.names=FALSE)
+summary_b <- data.frame(criterion=c('raw_genes','author_like_prefiltered_genes','padj_below_0.05','padj_below_0.05_and_abs_log2FC_above_1','significant_up','significant_down'),value=c(nrow(mat),sum(zero_filter_keep),sum(!is.na(res_original_filter$padj)&res_original_filter$padj<.05),sum(!is.na(res_original_filter$padj)&res_original_filter$padj<.05&abs(res_original_filter$log2FoldChange)>1),sum(!is.na(res_original_filter$padj)&res_original_filter$padj<.05&res_original_filter$log2FoldChange>1),sum(!is.na(res_original_filter$padj)&res_original_filter$padj<.05&res_original_filter$log2FoldChange< -1)))
+write.csv(summary_b,file.path(out,'deseq2_author_filter_summary.csv'),row.names=FALSE)
+writeLines(c('# Publication-like filtering sensitivity check',paste('DESeq2 version:',as.character(packageVersion('DESeq2'))),'Published DESeq2 version: 1.36.0','This alternate filter keeps genes with >=1 positive count within EACH treatment group (n=4 each).','Original author GEO feature IDs and processing settings may differ; a matching DEG count does NOT prove exact same 406 genes.','',paste(summary_b$criterion,summary_b$value,sep=': ',collapse='\n')),file.path(out,'AUTHOR_FILTER_REPORT.md'))
+print(summary_b)
