@@ -55,22 +55,34 @@ def walk(obj, prefix='', depth=0):
             yield from walk(v,f'{prefix}/{i}',depth+1)
 
 def table_audit(raw:bytes):
-    if len(raw)>MAX_BYTES: return {'status':'TOO_LARGE'}
+    doc=maybe_json(raw)
+    if isinstance(doc,dict):
+        head=doc.get('header')
+        data=doc.get('data')
+        cols=list(head) if isinstance(head,dict) else (head if isinstance(head,list) else [])
+        if isinstance(data,list):
+            rows=len(data)
+            row_shape=(list(data[0])[:20] if data and isinstance(data[0],dict) else
+                       type(data[0]).__name__ if data else 'empty')
+        elif isinstance(data,dict):
+            rows=len(data)
+            row_shape=list(data)[:20]
+        else:
+            rows=None; row_shape=type(data).__name__
+        return {'status':'PARSED_JSON','n_rows':rows,'n_columns':len(cols),
+                'column_names':cols[:50],'keys':list(doc)[:20],'row_shape':row_shape}
     text=raw.decode('utf-8-sig',errors='replace')
     first=text.splitlines()[:4]
     if not first:return {'status':'EMPTY'}
-    try:
-        dialect=csv.Sniffer().sniff('\n'.join(first),delimiters='\t,;')
-        delimiter=dialect.delimiter
-    except csv.Error:
-        delimiter='\t'
+    try: delimiter=csv.Sniffer().sniff('\n'.join(first),delimiters='\t,;').delimiter
+    except csv.Error:delimiter='\t'
     reader=csv.reader(io.StringIO(text),delimiter=delimiter)
     rows=[]
     for row in reader:
         rows.append(row)
         if len(rows)>=10000:break
-    return {'status':'PARSED','n_preview_rows':max(0,len(rows)-1), 'n_columns':len(rows[0]) if rows else 0,
-            'column_names':rows[0][:40] if rows else [],'delimiter':repr(delimiter), 'truncated_rows':len(rows)>=10000}
+    return {'status':'PARSED_TEXT','n_rows':max(0,len(rows)-1), 'n_columns':len(rows[0]) if rows else 0,
+            'column_names':rows[0][:50] if rows else [],'delimiter':repr(delimiter), 'truncated_rows':len(rows)>=10000}
 
 def main():
     p=argparse.ArgumentParser()
@@ -96,9 +108,19 @@ def main():
         if name=='sample' and body:
             result['sample_table_audit']=table_audit(body)
     result['candidate_metadata_files']=result['candidate_metadata_files'][:100]
+    # Only pre-identified ISA assay and metabolite annotation tables, no instrument raw data.
+    known=sorted(set(x['value'] for x in result['candidate_metadata_files']
+                     if re.match(r'^(a_|m_)MTBLS13630_.*\.(txt|tsv)$',x['value'])))
+    result['assay_and_metabolite_audits']={}
+    for name in known[:10]:
+        meta, body=get(f'{BASE}/studies/{ACCESSION}/'+urllib.parse.quote(name),limit=MAX_BYTES)
+        entry={'response':meta}
+        if body:
+            entry['table']=table_audit(body)
+        result['assay_and_metabolite_audits'][name]=entry
     # A positive metadata fetch does NOT establish public access to an analyzable matrix.
     s=result['endpoints']['study']['status']
-    if s=='OK' and result.get('sample_table_audit',{}).get('status')=='PARSED':
+    if s=='OK' and result.get('sample_table_audit',{}).get('status') in ('PARSED_JSON','PARSED_TEXT'):
         result['decision']='HOLD_FOR_ASSAY_MATRIX_AND_GROUP_MAPPING'
     elif s=='OK':
         result['decision']='HOLD_SAMPLE_METADATA_ACCESS'
@@ -118,8 +140,9 @@ def main():
         f"- study API: {result['endpoints']['study']['status']}",
         f"- files API: {result['endpoints']['files']['status']}",
         f"- sample metadata: {result['endpoints']['sample']['status']}",
-        f"- sample table preview: {tab.get('n_preview_rows','NA')} rows, {tab.get('n_columns','NA')} cols",
-        '- 수치 대사체 행렬 확보·환자 매핑·분산검증: 아직 통과하지 않음',
+        f"- sample table preview: {tab.get('n_rows','NA')} rows, {tab.get('n_columns','NA')} cols",
+        f"- 공개 ISA assay/MAF 조회: {sum(v['response']['status']=='OK' for v in result['assay_and_metabolite_audits'].values())}/{len(result['assay_and_metabolite_audits'])}",
+        '- 수치 대사체 행렬·환자 매핑·분산검증: 추가 검증 필요',
         '','## 주요 공개 자료',
         '- 원논문: https://doi.org/10.1016/j.isci.2026.115587',
         '- MetaboLights: https://www.ebi.ac.uk/metabolights/MTBLS13630',
