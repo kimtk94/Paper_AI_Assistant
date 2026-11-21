@@ -2,7 +2,7 @@
 """Find author-published GEO GSM -> ROI/donor linkage from public article supplements.
 No donor guesses: only explicit table content should authorize mapping.
 """
-import argparse, datetime as dt, json, re, urllib.request, urllib.error, xml.etree.ElementTree as ET, hashlib
+import argparse, datetime as dt, json, re, urllib.request, urllib.error, xml.etree.ElementTree as ET, hashlib, zipfile, io
 from pathlib import Path
 
 PMCID='PMC13552446'; ROOT='https://pmc.ncbi.nlm.nih.gov/articles/'+PMCID
@@ -72,10 +72,26 @@ def main():
                 (out/name).write_bytes(blob);cand['saved']=name;break
             # Do not analyze PDF here: PDF needs a page-by-page source review.
         report['supplementary_candidates'].append(cand)
+    # Europe PMC provides an authenticated/public supplementary archive in one ZIP.
+    # Previous cap (12 MB) was too small; download once, extract only official tabular supplements.
+    archive_url='https://www.ebi.ac.uk/europepmc/webservices/rest/'+PMCID+'/supplementaryFiles'
+    archive,stat=fetch(archive_url,limit=70_000_000)
+    report['official_supplement_archive']=stat
+    if archive and zipfile.is_zipfile(io.BytesIO(archive)):
+        with zipfile.ZipFile(io.BytesIO(archive)) as z:
+            report['official_archive_inventory']=[{'name':v.filename,'bytes':v.file_size,'compressed_bytes':v.compress_size} for v in z.infolist()][:100]
+            for item in z.infolist():
+                # Do not extract PDF here. Parsing PDF requires page-level review elsewhere.
+                if item.filename.lower().endswith(('.xlsx','.csv','.tsv','.txt')) and item.file_size<=10_000_000:
+                    name=item.filename.rsplit('/',1)[-1]
+                    if not name:continue
+                    raw=z.read(item)
+                    (out/name).write_bytes(raw)
+                    report.setdefault('official_saved_tabular',[]).append({'name':name,'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()})
     report['candidate_count']=len(candidates)
     report['saved_tabular_files']=[x['saved'] for x in report['supplementary_candidates'] if 'saved' in x]
     # Availability of a supplementary Table S2 does not mean it contains donor IDs; no automatic GO.
     (out/'SUPPLEMENT_DISCOVERY.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
-    print(json.dumps({'pmcid':PMCID,'source_statuses':[(x['url'].split('/')[-1],x['status']) for x in report['source_urls']], 'candidate_count':len(candidates),'saved':report['saved_tabular_files'],'decision':report['decision']},ensure_ascii=False))
+    print(json.dumps({'pmcid':PMCID,'source_statuses':[(x['url'].split('/')[-1],x['status']) for x in report['source_urls']], 'candidate_count':len(candidates),'saved':report['saved_tabular_files'],'official_tabular':report.get('official_saved_tabular',[]),'decision':report['decision']},ensure_ascii=False))
 
 if __name__=='__main__':main()
