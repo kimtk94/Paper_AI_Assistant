@@ -1,0 +1,28 @@
+name: HS GSE294009 donor mapping and file inventory
+on:
+  pull_request:
+    paths:
+      - 'projects/hs_spatial_gse294009/**'
+      - '.github/workflows/hs-spatial-gse294009-probe.yml'
+  workflow_dispatch:
+jobs:
+  spatial-geo-inventory:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check syntax and parse GEO metadata
+        run: |
+          python -m py_compile projects/hs_spatial_gse294009/geo_file_probe.py
+          python projects/hs_spatial_gse294009/geo_file_probe.py --out output/hs_spatial_gse294009
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hs-spatial-gse294009-file-and-donor-inventory
+          path: output/hs_spatial_gse294009/
+          retention-days: 45
+          if-no-files-found: warn
