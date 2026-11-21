@@ -38,6 +38,10 @@ jobs:
               print('METHOD_CATEGORY',section,'COUNT',len(hits))
               for item in hits[:8]:
                   print('PAGE',item['source_page'],'TEXT',item['context'][:350])
+          for label,anchors in r.get('author_pipeline_anchor_context',{}).items():
+              print('PIPELINE_ANCHOR',label,'MATCHES',len(anchors))
+              for anchor in anchors[:3]:
+                  print('PDF_PAGE',anchor['page'],'EXACT_CONTEXT',anchor['text'][:900])
           print('METHODS_SOURCE_REVIEW_REQUIRED')
           PY
       - name: Upload bounded audit metadata only, without source PDF or full article text
