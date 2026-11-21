@@ -79,6 +79,14 @@ jobs:
               assert (x['n_deep_Early_donors'],x['n_deep_Late_donors'])==(7,3)
               assert x['n_RUV_factors']==2
               assert x['full_design_rank']==x['full_design_ncol']
+              loo=x['JCHAIN_conditional_LOO']
+              assert loo['n_withheld_independent_donors']==10
+              assert len(loo['withheld_donor_results'])==10
+              assert 0<=loo['n_model_success']<=10
+              assert isinstance(loo['all_valid_and_same_sign'],bool)
+              assert all(y['status'] in ('PASS','HOLD_LT2_DONORS','HOLD_MODEL_ERROR') for y in loo['withheld_donor_results'])
+              print('JCHAIN_CONDITIONAL_DONOR_LOO',method,loo['n_model_success'],
+                    'out_of_10',loo['all_valid_and_same_sign'],'range',loo['effect_range'])
               assert not x['author_equivalent'] and not x['early_late_de_confirmed']
           print('STANDR_RUV4_2_NORMALIZATION_METHODS_MODEL_FIT_PASS_NO_PUBLICATION_CLAIM')
           PY
