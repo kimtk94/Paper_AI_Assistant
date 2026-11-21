@@ -56,21 +56,58 @@ def therapy(out):
     if raw_body:
         try:
             with tarfile.open(fileobj=io.BytesIO(raw_body),mode='r:*') as tf:
-                member_names=[m.name for m in tf.getmembers() if m.isfile()]
-            audit['raw_tar_probe']['member_count']=len(member_names)
-            audit['raw_tar_probe']['first_names']=member_names[:15]
-            audit['raw_tar_probe']['n_internal_column_names_in_members']=sum(any(c in n for n in member_names) for c in mat.columns)
-            canonical=lambda v: re.sub(r'[^a-z0-9]','',str(v).lower())
-            canonical_cols={canonical(c):c for c in mat.columns}
-            for name in member_names:
-                gsm=re.search(r'GSM\d+',name)
-                if not gsm:continue
-                # GEO names: GSM6593907_GTG-360-B1-47.txt.gz versus matrix GTG.360.B1.47
-                stem=re.sub(r'\.(?:txt|csv)(?:\.gz)?$', '', name.split('/')[-1],flags=re.I)
-                internal=re.sub(r'^GSM\d+_', '', stem)
-                c=canonical_cols.get(canonical(internal))
-                if c: mapping[c]=gsm.group(0)
-        except Exception as e:audit['raw_tar_probe']['error']=str(e)[:250]
+                members=[m for m in tf.getmembers() if m.isfile()]
+                member_names=[m.name for m in members]
+                audit['raw_tar_probe']['member_count']=len(member_names)
+                audit['raw_tar_probe']['first_names']=member_names[:15]
+                audit['raw_tar_probe']['last_names']=member_names[-10:]
+                canonical=lambda v: re.sub(r'[^a-z0-9]','',str(v).lower())
+                canonical_cols={canonical(c):c for c in mat.columns}
+                unmapped=[]
+                for member in members:
+                    name=member.name
+                    gsm=re.search(r'GSM\d+',name)
+                    if not gsm:continue
+                    stem=re.sub(r'\.(?:txt|csv)(?:\.gz)?$', '', name.split('/')[-1],flags=re.I)
+                    internal=re.sub(r'^GSM\d+_', '', stem)
+                    col=canonical_cols.get(canonical(internal))
+                    if col: mapping[col]=gsm.group(0)
+                    else:unmapped.append(name)
+                audit['raw_tar_probe']['unmatched_member_names_first']=unmapped[:15]
+                audit['raw_tar_probe']['unmatched_matrix_columns_first']=[str(c) for c in mat.columns if c not in mapping][:15]
+                # For every individual file, verify its gene ID/count rows against the matrix.
+                # Missing identifiers are reconstructed only with *unique exact signatures*.
+                variances=mat.var(axis=1).sort_values(ascending=False)
+                topgenes=[str(v) for v in variances.index[:60]]
+                signature_cols={c:tuple(float(mat.loc[int(g) if mat.index.dtype.kind in 'iu' else g,c]) for g in topgenes[:25]) for c in mat.columns}
+                remaining={c for c in mat.columns if c not in mapping}
+                for member in members:
+                    gsm_match=re.search(r'GSM\d+',member.name)
+                    if not gsm_match:continue
+                    gsm=gsm_match.group(0)
+                    if gsm in mapping.values():continue
+                    binary=tf.extractfile(member).read()
+                    if member.name.endswith('.gz'):binary=gzip.decompress(binary)
+                    lines=binary.decode('utf8','replace').splitlines()
+                    if 'sample_file_first_lines' not in audit['raw_tar_probe']:
+                        audit['raw_tar_probe']['sample_file_first_lines']=lines[:6]
+                    observed={}
+                    for line in lines:
+                        cells=re.split(r'[\t,; ]+',line.strip())
+                        if len(cells)>=2 and cells[0] in topgenes:
+                            try:observed[cells[0]]=float(cells[1])
+                            except ValueError:continue
+                    if len(observed)<10:continue
+                    matched_cols=[]
+                    genes=sorted(observed)[:30]
+                    for col in remaining:
+                        try:
+                            if all(float(mat.loc[int(g) if mat.index.dtype.kind in 'iu' else g,col])==observed[g] for g in genes):matched_cols.append(col)
+                        except (KeyError,ValueError):continue
+                    if len(matched_cols)==1:
+                        mapping[matched_cols[0]]=gsm;remaining.remove(matched_cols[0])
+                audit['raw_tar_probe']['numeric_verified_map_n']=len(mapping)
+        except Exception as e:audit['raw_tar_probe']['error']=str(e)[:350]
     audit['explicit_column_map_n']=len(mapping)
     audit['n_unique_gsm_from_map']=len(set(mapping.values()))
     audit['exemplar_map']=dict(list(mapping.items())[:8])
