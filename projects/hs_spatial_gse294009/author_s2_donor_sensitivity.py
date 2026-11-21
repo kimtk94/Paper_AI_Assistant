@@ -23,6 +23,16 @@ def fval(v):
         return q if math.isfinite(q) else None
     except (TypeError,ValueError):return None
 
+def harmonize_author_compartment(s):
+    val=str(s or '').lower()
+    if 'epithelium_epidermis' in val:return 'Epithelium_Epidermis'
+    if 'epithelium_sinustract' in val:return 'Epithelium_Dermis'
+    if 'inflammatory aggregate_deepdermis' in val:return 'Dermis_Deep_Inflammation'
+    if 'inflammatory aggregate_superficialdermis' in val:return 'Dermis_Superficial_Inflammation'
+    if 'hairfollicle' in val:return 'Hair_Follicle'
+    if 'gland' in val:return 'Gland'
+    return 'OTHER'
+
 def main():
     p=argparse.ArgumentParser();p.add_argument('--input',default='output/hs_spatial_gse294009');p.add_argument('--crosswalk',default='projects/hs_spatial_gse294009/author_s2_geo_crosswalk.csv');p.add_argument('--out',default='output/hs_spatial_gse294009');a=p.parse_args()
     folder=Path(a.out);folder.mkdir(parents=True,exist_ok=True)
@@ -37,12 +47,25 @@ def main():
     observed={x['gsm'] for x in expr if x['gene']==expr[0]['gene']}
     if len(observed)!=204:raise RuntimeError('STOP expression does not have all 204 ROI')
     count=collections.Counter();pairs=collections.defaultdict(list)
+    qc=read(Path(a.input)/'roi_qc.csv')
+    qc_map={x['gsm']:x for x in qc}
+    geo_vs_author=[]
+    for gsm,sub in meta.items():
+        if gsm not in qc_map:raise RuntimeError('S2 GSM missing in ROI QC')
+        g=qc_map[gsm]
+        if g['stage']!=sub['author_stage_from_roi']:
+            geo_vs_author.append({'gsm':gsm,'geo_stage':g['stage'],
+                'author_stage':sub['author_stage_from_roi'],'patient':sub['patient'],
+                'geo_compartment':g['tissue_compartment'],
+                'author_compartment':harmonize_author_compartment(sub['author_roi_classification'])})
     for item in expr:
         subject=meta.get(item['gsm'])
         if not subject:continue
         val=fval(item.get('q3_scaled_ratio'))
         if val is None:continue
-        gene=item['gene']; comp=item['compartment']
+        gene=item['gene']; comp=harmonize_author_compartment(subject['author_roi_classification'])
+        # GEO's original `disease` label is incorrect for several S2 HS ROIs.
+        # Classification/compartment MUST come from author S2, not GEO's raw description.
         rec={**subject,'gene':gene,'compartment':comp,'ratio':val}
         pairs[(subject['patient'],gene,comp)].append(rec)
         count['roi_gene_values']+=1
@@ -80,23 +103,28 @@ def main():
        'n_geo_s2_rows':len(m),'n_explicit_donor_ids':16,'n_HS_donors':15,
        'n_HS_geo_ROIs':sum(x['patient'].startswith('HS') for x in m),'n_AC_geo_ROIs':sum(x['patient'].startswith('AC') for x in m),
        'n_not_in_s2_of_204':204-len(m),'n_prior_study_HS_ROIs':24,
+       'n_geo_versus_author_stage_discrepancies':len(geo_vs_author),
+       'geo_vs_author_stage_examples':geo_vs_author[:25],
+       'compartment_source':'Author Supplementary Table S2 overrides inconsistent GEO disease labels',
        'n_paper_HS_ROIs':sum(x['patient'].startswith('HS') for x in m)+24,
        'S1_S2_conflict':{'donor':'HS12','roi_ids':[x['gsm'] for x in disc],'S1':'Late Hurley III','S2':'Early ROI classification'},
        'donor_site_counts':printrows,
        'n_donor_gene_compartment_records':len(donor),'n_descriptive_contrasts':len(results),
        'status':'DESCRIPTIVE_DONOR_AWARE_WITH_BATCH_CONFOUNDING',
-       'warnings':['No independent ROIs or ROI-level p/FDR.',
+       'warnings':['Original GEO disease characteristics label 25 author-Late-HS ROI as control/psoriasis; use S2 classification for ROI compartment and clinical stage.', 'No independent ROIs or ROI-level p/FDR.',
                    'S1/S2 HS12 stage discrepancy requires source correction; exclude conflicted donor in primary sensitivity.',
                    'GEO GSE294009 lacks 24 previously published HS ROIs included in S2; no exact full paper quant replication.',
                    'Multiple ROIs per donor; clinical data and study site confounded with stage.',
                    'Author normalization/LOQ and unknown exclusions cannot be equated with exploratory Q3 ratio.',
                    'Cross-study HS treatment response GSE213761 is different donor and Adalimumab; no joint prediction.']}
     save(folder/'AUTHOR_S2_SITE_DONOR_COUNTS.csv',printrows)
+    save(folder/'AUTHOR_S2_GEO_STAGE_DISCORDANCES.csv',geo_vs_author)
     save(folder/'AUTHOR_S2_DONOR_AGGREGATED_CONTRASTS.csv',results)
     (folder/'AUTHOR_S2_DONOR_AUDIT.json').write_text(json.dumps(result,ensure_ascii=False,indent=2))
     key=[r for r in results if r['gene'] in TARGETS and r['compartment'] in ('Epithelium_Epidermis','Dermis_Deep_Inflammation')]
     lines=['# GSE294009 author S2 patient-aware targeted GeoMx audit','','**Interpretation: descriptive only.** Explicit original patient IDs from author-published S2; see S1/S2 HS12 disagreement.','',f"- S2 listed GEO ROI = {len(m)}; HS=132, AC=14, plus historical external HS=24; manuscript HS ROI total=156.",
       '- The full GEO has 204 registrations; S2 lists only 146 of those plus 24 historic datasets.',
+      f"- **{len(geo_vs_author)} S2 ROIs have a conflicting GEO stage label**; all donor/compartment analyses here use author S2, never GEO group labels.", 
       '- Site/slide preparations and disease stage are confounded; no adjusted differential expression is estimated.',
       '', '## Same-compartment gene signals, donor medians','', '|Gene|Compartment|Sensitivity|Early donors / Late donors|Descriptive late-vs-early log₂ ratio|','|---|---|---|---:|---:|']
     for r in key:lines.append(f"|{r['gene']}|{r['compartment']}|{r['sensitivity']}|{r['early_donors']} / {r['late_donors']}|{r['descriptive_log2_late_early_pseudo_0p1']}|")
