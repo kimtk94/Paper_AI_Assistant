@@ -60,11 +60,16 @@ def therapy(out):
             audit['raw_tar_probe']['member_count']=len(member_names)
             audit['raw_tar_probe']['first_names']=member_names[:15]
             audit['raw_tar_probe']['n_internal_column_names_in_members']=sum(any(c in n for n in member_names) for c in mat.columns)
+            canonical=lambda v: re.sub(r'[^a-z0-9]','',str(v).lower())
+            canonical_cols={canonical(c):c for c in mat.columns}
             for name in member_names:
                 gsm=re.search(r'GSM\d+',name)
-                if gsm:
-                    for c in mat.columns:
-                        if c in name:mapping[c]=gsm.group(0)
+                if not gsm:continue
+                # GEO names: GSM6593907_GTG-360-B1-47.txt.gz versus matrix GTG.360.B1.47
+                stem=re.sub(r'\.(?:txt|csv)(?:\.gz)?$', '', name.split('/')[-1],flags=re.I)
+                internal=re.sub(r'^GSM\d+_', '', stem)
+                c=canonical_cols.get(canonical(internal))
+                if c: mapping[c]=gsm.group(0)
         except Exception as e:audit['raw_tar_probe']['error']=str(e)[:250]
     audit['explicit_column_map_n']=len(mapping)
     audit['n_unique_gsm_from_map']=len(set(mapping.values()))
@@ -91,15 +96,28 @@ def therapy(out):
     import pandas as pd
     libs=mat.sum(axis=0).astype(float)
     logcpm=np.log2(mat.div(libs,axis=1)*1e6+1)
+    # Gene index is NCBI Entrez GeneID; do not misinterpret as symbols.
+    entrez={'IL17A':'3605','IL1B':'3553','TNF':'7124','CXCL8':'3576',
+            'CXCL13':'10563','S100A8':'6279','S100A9':'6280','KRT17':'3872','CCL20':'6364'}
     candidate=[]
     for g in GENES['hs_therapy']:
-        idx=[id for id in mat.index if str(id).upper()==g.upper()]
+        idx=[id for id in mat.index if str(id).strip()==entrez.get(g,'__MISSING__')]
         if not idx:continue
         row=logcpm.loc[idx[0]]
         diffs=np.array([float(row[b['column']]-row[a['column']]) for a,b in les_pairs])
-        candidate.append({'gene':g,'n_matched_pairs':len(diffs),'median_delta_log2cpm':float(np.median(diffs)),
-                          'positive_pairs':int((diffs>0).sum()),'negative_pairs':int((diffs<0).sum())})
+        responder_deltas=[];nonresponder_deltas=[]
+        for a,b in les_pairs:
+            delta=float(row[b['column']]-row[a['column']])
+            (responder_deltas if a['responder']=='YES' else nonresponder_deltas).append(delta)
+        candidate.append({'gene':g,'entrez_id':entrez[g], 'n_matched_pairs':len(diffs),
+                          'median_delta_log2cpm':round(float(np.median(diffs)),4),
+                          'positive_pairs':int((diffs>0).sum()),'negative_pairs':int((diffs<0).sum()),
+                          'n_responder_pairs':len(responder_deltas),'responder_median_delta':round(float(np.median(responder_deltas)),4) if responder_deltas else None,
+                          'n_nonresponder_pairs':len(nonresponder_deltas),'nonresponder_median_delta':round(float(np.median(nonresponder_deltas)),4) if nonresponder_deltas else None})
     audit['candidate_gene_analysis']=candidate
+    if candidate:
+        with open(out/'hs_therapy_paired_exploratory.csv','w',newline='',encoding='utf8') as f:
+            w=csv.DictWriter(f,fieldnames=list(candidate[0]));w.writeheader();w.writerows(candidate)
     audit['status']='QC_PAIRED_DESIGN_READY_EXPLORATORY' if len(les_pairs)>=5 else 'HOLD_TOO_FEW_PAIRS'
     import csv
     with open(out/'hs_therapy_explicit_sample_map.csv','w',newline='',encoding='utf8') as f:
@@ -126,13 +144,17 @@ def nmosd(out):
     mapped={col:tracks[col] for col in header if col in tracks}
     audit['matched_track_columns']=len(mapped)
     audit['unique_matched_GSM']=len({s['accession'] for s in mapped.values()})
-    candidate=[]; first_genes=[]
+    gene_ids={'FOXP3':'ENSG00000049768','PDCD1':'ENSG00000188389',
+              'CTLA4':'ENSG00000163599','LAG3':'ENSG00000089692',
+              'CD40LG':'ENSG00000102245','IL21':'ENSG00000138684'}
+    id_to_symbol={v:k for k,v in gene_ids.items()}
+    candidate=[];first_genes=[]
     for i,row in enumerate(reader):
         if i<8: first_genes.append(row[:4])
         if len(row)!=len(header):continue
         # Gene_id is symbol or Ensembl depending on GEO export.
         names=[str(row[j]).upper() for j in range(min(4,len(row)))]
-        hits=[g for g in GENES['nmosd'] if g.upper() in names]
+        hits=[id_to_symbol[row[1].upper()]] if len(row)>1 and row[1].upper() in id_to_symbol else []
         if not hits:continue
         vals=[]
         for j,c in enumerate(header):
@@ -146,7 +168,7 @@ def nmosd(out):
             stats[m.group(1) if m else 'Other'].append(v)
         for g in hits:
             for k,v in stats.items():
-                candidate.append({'gene':g,'stimulation_title':k,'cells_with_read':len(v),
+                candidate.append({'gene':g,'entrez_stable_id':gene_ids[g],'stimulation_title':k,'cells_with_read':len(v),
                   'fraction_detected':round(sum(vv>0 for vv in v)/len(v),4), 'mean_raw_count':round(sum(v)/len(v),3)})
     audit['first_gene_row_names']=first_genes
     audit['candidate_gene_by_title']=candidate
