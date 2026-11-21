@@ -26,3 +26,25 @@ jobs:
           name: gse135893-metadata-audit
           path: output/ipf_gse135893_metadata/
           retention-days: 30
+
+  targeted-lung-genes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    needs: public-geo-metadata
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify targeted MTX code
+        run: python -m py_compile projects/ipf_pxd010965/gse135893_targeted.py
+      - name: Stream 1GB GSE135893 sparse matrix for targeted genes
+        run: python projects/ipf_pxd010965/gse135893_targeted.py --out output/ipf_gse135893_targeted
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gse135893-donor-celltype-targets
+          path: output/ipf_gse135893_targeted/
+          retention-days: 30
