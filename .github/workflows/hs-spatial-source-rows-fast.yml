@@ -1,0 +1,38 @@
+name: HS Spatial pinned-source S1/S2 ROI inventory
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/hs-spatial-source-rows-fast.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  pinned-original-s2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Retrieve original S1-S3 from prior verified official download
+        uses: actions/download-artifact@v4
+        with:
+          name: hs-spatial-publication-supplement-linkage
+          run-id: 44895230840
+          github-token: ${{ github.token }}
+          path: output/hs_spatial_supp/
+      - name: Verify SHA256 and inspect source-only rows
+        run: |
+          python -m py_compile projects/hs_spatial_gse294009/hs_s1s2_site_stage_qc.py
+          python projects/hs_spatial_gse294009/hs_s1s2_site_stage_qc.py
+      - name: Save S1-S2 provenance audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-s2-pinned-original-row-inventory
+          path: |
+            output/hs_spatial_supp/HS_SOURCE_STAGE_SITE_QC.json
+            output/hs_spatial_supp/SITE_MATCHED_COMPARTMENT_COVERAGE.csv
+          retention-days: 30
