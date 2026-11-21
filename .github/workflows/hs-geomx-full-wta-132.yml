@@ -1,0 +1,66 @@
+name: HS GeoMx full WTA 132 source-verified counts
+on:
+  pull_request:
+    paths:
+      - 'projects/hs_spatial_gse294009/build_full_wta_132.py'
+      - 'projects/hs_spatial_gse294009/author_s2_geo_crosswalk.csv'
+      - '.github/workflows/hs-geomx-full-wta-132.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  recover-full-wta-counts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Load independent previously verified full GEO DCC SHA and slide inventory
+        uses: actions/download-artifact@v4
+        with:
+          name: hs-spatial-gse294009-file-and-donor-inventory
+          run-id: 44907357144
+          github-token: ${{ github.token }}
+          path: output/hs_spatial_gse294009
+      - name: Recover complete endogenous gene-by-ROI raw matrix from official GEO
+        run: |
+          python -m py_compile projects/hs_spatial_gse294009/build_full_wta_132.py
+          python projects/hs_spatial_gse294009/build_full_wta_132.py --out output/hs_spatial_full_matrix --source-audit output/hs_spatial_gse294009/RECONSTRUCTION_AUDIT.json
+      - name: Fail closed on source, cohort, and gene feature integrity
+        run: |
+          python - <<'PY'
+          import csv,gzip,json
+          from pathlib import Path
+          base=Path('output/hs_spatial_full_matrix')
+          audit=json.loads((base/'HS_132_FULL_WTA_SOURCE_AUDIT.json').read_text())
+          assert audit['status']=='FULL_WTA_PUBLIC_132_HS_SOURCE_COUNTS_VERIFIED__NO_DE'
+          assert audit['all_source_DCC_GSMs_matched']==204
+          assert audit['included_S2_GEO_HS_ROI']==132
+          assert audit['n_independent_HS_donors']==15
+          assert audit['historical_2023_roi_unavailable']==24
+          assert 15000<=audit['endogenous_gene_rows']<=25000
+          with gzip.open(base/'HS_132_HS_GENE_WTA_COUNTS.csv.gz','rt') as f:
+              reader=csv.reader(f)
+              header=next(reader)
+              assert len(header)==133 and len(set(header[1:]))==132
+              target={r[0]:r[1:] for r in reader if r[0] in {'JCHAIN','CXCL13','MS4A1','CD79A'}}
+          assert len(target)==4
+          assert all(len(v)==132 for v in target.values())
+          with (base/'HS_132_AUTHOR_S2_MANIFEST.csv').open() as f:
+              m=list(csv.DictReader(f))
+          assert len(m)==132
+          assert set(header[1:])=={x['gsm'] for x in m}
+          assert all(x['donor'].startswith('HS') for x in m)
+          print('FULL_WTA_S2_132_FEATURE_PROVENANCE_PASS',audit['endogenous_gene_rows'])
+          PY
+      - name: Archive reproducible full WTA source counts and phenotype metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-2026-132-full-wta-source-counts
+          path: output/hs_spatial_full_matrix/
+          retention-days: 45
+          if-no-files-found: warn
