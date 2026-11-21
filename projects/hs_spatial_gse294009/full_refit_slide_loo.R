@@ -80,6 +80,14 @@ fit_voom <- function(submat,submeta,ruv_cd,norm,model){
                 ~0 + Stage + SlideName + ruv_W1 + ruv_W2
              else stop("UNRECOGNIZED_DESIGN")
   d <- stats::model.matrix(formula,data=cd)
+  # limma::makeContrasts requires syntactically valid coefficient names.
+  # Source slide labels such as "HS slide 2 plz" are legitimate categories
+  # but produce invalid coefficient names. Rename DESIGN COLUMNS only;
+  # never mutate the source slide labels, batch grouping, or donor metadata.
+  source_design_names <- colnames(d)
+  colnames(d) <- make.names(source_design_names, unique=TRUE)
+  if (!all(c("StageEarly","StageLate") %in% colnames(d)) ||
+      anyDuplicated(colnames(d))) stop("CONTRAST_DESIGN_NAMES_STOP")
   if(qr(d)$rank!=ncol(d))stop("SLIDE_OR_RUV_STAGE_ALIASED")
   if(ncol(d)>=nrow(m)-3L)stop("INSUFFICIENT_RESIDUAL_DF")
   ng <- length(unique(as.character(m$Donor)))
