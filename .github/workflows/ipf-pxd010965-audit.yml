@@ -20,9 +20,13 @@ jobs:
         run: python -m py_compile projects/ipf_pxd010965/audit.py
       - name: Audit public PRIDE metadata and file list
         run: python projects/ipf_pxd010965/audit.py --out output/ipf_pxd010965
+      - name: Inspect small public Proteins.csv when accessible
+        run: python projects/ipf_pxd010965/inspect_quant.py --out output/ipf_pxd010965_quant
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ipf-pxd010965-public-audit
-          path: output/ipf_pxd010965/
+          path: |
+            output/ipf_pxd010965/
+            output/ipf_pxd010965_quant/
           retention-days: 60
