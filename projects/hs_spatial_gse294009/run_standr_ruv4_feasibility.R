@@ -63,11 +63,11 @@ if (qr(fixed)$rank == ncol(fixed)) stop("EXPECTED_DONOR_FIXED_STAGE_ALIAS_NOT_FO
 
 dge_all <- edgeR::DGEList(counts=mat)
 spe_template <- standR::readGeoMxFromDGE(dge_all)
-S4Vectors::colData(spe_template)$Stage <- md$Stage
-S4Vectors::colData(spe_template)$Donor <- md$Donor
-S4Vectors::colData(spe_template)$SlideName <- md$SlideName
-S4Vectors::colData(spe_template)$Compartment <- md$Compartment
-S4Vectors::colData(spe_template)$Group <- md$Group
+SummarizedExperiment::colData(spe_template)$Stage <- md$Stage
+SummarizedExperiment::colData(spe_template)$Donor <- md$Donor
+SummarizedExperiment::colData(spe_template)$SlideName <- md$SlideName
+SummarizedExperiment::colData(spe_template)$Compartment <- md$Compartment
+SummarizedExperiment::colData(spe_template)$Group <- md$Group
 
 results <- list()
 for (norm_method in c("TMM","upperquartile")) {
@@ -82,7 +82,7 @@ for (norm_method in c("TMM","upperquartile")) {
   if ("JCHAIN" %in% ncgs) stop("JCHAIN_AS_NEGATIVE_CONTROL_GENE_STOP")
   spe_ruv <- standR::geomxBatchCorrection(spe_ncg, k=2L, factors="Group",
                     NCGs=ncgs, n_assay=2L, method="RUV4")
-  cd <- as.data.frame(S4Vectors::colData(spe_ruv))
+  cd <- as.data.frame(SummarizedExperiment::colData(spe_ruv))
   required_W <- c("ruv_W1","ruv_W2")
   if (!all(required_W %in% names(cd))) stop("MISSING_STANDR_RUV4_COVARIATES")
   if (any(!is.finite(as.matrix(cd[,required_W,drop=FALSE])))) stop("NONFINITE_RUV_COVARIATES")
