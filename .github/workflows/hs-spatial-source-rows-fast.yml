@@ -2,6 +2,7 @@ name: HS Spatial pinned-source S1/S2 ROI inventory
 on:
   pull_request:
     paths:
+      - 'projects/hs_spatial_gse294009/hs_s1s2_site_stage_qc.py'
       - '.github/workflows/hs-spatial-source-rows-fast.yml'
   workflow_dispatch:
 permissions:
@@ -35,4 +36,5 @@ jobs:
           path: |
             output/hs_spatial_supp/HS_SOURCE_STAGE_SITE_QC.json
             output/hs_spatial_supp/SITE_MATCHED_COMPARTMENT_COVERAGE.csv
+            output/hs_spatial_supp/HISTORIC_24_EXPECTED_ROI_MANIFEST.csv
           retention-days: 30
