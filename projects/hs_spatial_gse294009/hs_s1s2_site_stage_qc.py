@@ -104,6 +104,15 @@ def main():
         inventory.append({'sheet':sheet,'nonempty_rows':len(rows),'gsm_total':len(sheet_gsm),
                           'crosswalk_gsm_found':len(sheet_gsm & set(gsm))})
         if len(sheet_gsm & set(gsm))>=140:s2_no_gsm=untagged
+    # Original S2 has two heading rows and exactly 24 pre-existing SNU GeoMx ROIs.
+    prior=[x for x in s2_no_gsm if x['row']>2]
+    historic=collections.Counter(x['cells'][1] for x in prior)
+    if len(s2_no_gsm)!=26 or len(prior)!=24 or historic!={'HS41':6,'HS42':6,'HS43':12}:
+        raise ValueError('STOP: 2023 historical ROI source rows changed')
+    if not all('Suh-Yun Joh' in x['cells'][0] and 'Early_HS_' in x['cells'][2]
+               and x['cells'][3]=='Seoul National University' for x in prior):
+        raise ValueError('STOP: historical ROI provenance / stage / institution mismatch')
+    historic_comp=collections.Counter(x['cells'][2] for x in prior)
     absent=sorted(set(gsm)-set(found))
     if absent:raise ValueError('STOP: '+str(len(absent))+' S2 GSM not independently found in official XLSX')
     exact=sum(any(hit['same_row_patient'] for hit in row) for row in found.values())
@@ -113,9 +122,16 @@ def main():
       'source_same_row_patient_explicit':exact,
       'patient_source_verdict':'EXPLICIT_SAME_ROW' if exact==146 else 'REVIEW_GROUPED_ROWS_NOT_PROVEN',
       'workbook_sheets':inventory,
-      'S2_no_GSM_row_candidates':s2_no_gsm,
+      'historical_S2_row_source':{'reference':'Suh-Yun Joh et al., Br J Dermatol (2023)',
+                                   'doi':'10.1093/bjd/ljad274','institution':'Seoul National University',
+                                   'status':'SOURCE_METADATA_VERIFIED_QUANTIFICATION_HOLD',
+                                   'roi':len(prior),'donors':dict(historic),
+                                   'compartment_rows':dict(historic_comp)},
+      'S2_header_rows_without_GSM':len(s2_no_gsm)-len(prior),
       'cohort':{'GEO_HS_ROI':132,'GEO_AC_ROI':14,'manuscript_HS_ROI':156,
-                'not_in_GSE294009':24,'prior_24_original_source':'UNVERIFIED'},
+                'not_in_GSE294009':24,'prior_24_original_source':'VERIFIED_2023_BJD_S2_ROWS',
+                'GEO_HS_donors':15,'historical_HS_donors':3,'full_S2_HS_unique_donor_IDs':18,
+                'full_S2_HS_early_donor_IDs':11,'full_S2_HS_late_donor_IDs':7},
       'HS12_discordant_GSM':[r['gsm'] for r in disc],
       'scenarios':counts,'site_stage_preparation':site_rows,
       'compartment_matched_donor_coverage':coverage,
@@ -127,5 +143,5 @@ def main():
     print(json.dumps({'state':report['state'],'original_verified_GSM':len(found),
                       'explicit_patient_same_row':exact,'scenarios':counts,
                       'site_stage_preparation':site_rows,'compartments':coverage,
-                      'workbook_sheets':inventory,'S2_no_GSM_row_candidates':s2_no_gsm},ensure_ascii=False))
+                      'workbook_sheets':inventory,'historical_roi':len(prior),'historical_donors':dict(historic),'historical_compartments':dict(historic_comp)},ensure_ascii=False))
 if __name__=='__main__':main()
