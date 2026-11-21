@@ -1,0 +1,41 @@
+name: HS 2023 original 24 GeoMx ROI public-source discovery
+on:
+  pull_request:
+    paths:
+      - 'projects/hs_spatial_gse294009/historic24_public_source_audit.py'
+      - '.github/workflows/hs-2023-historic24-source-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-data-availability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile source scanner
+        run: python -m py_compile projects/hs_spatial_gse294009/historic24_public_source_audit.py
+      - name: Query publisher, Europe PMC, Crossref, PubMed-GEO and GEO
+        run: python projects/hs_spatial_gse294009/historic24_public_source_audit.py --out output/hs_spatial_historic24
+      - name: Fail-closed evidence schema check
+        run: |
+          python - <<'PY'
+          import json,pathlib
+          path=pathlib.Path('output/hs_spatial_historic24/HISTORICAL_24_PUBLIC_SOURCE_AUDIT.json')
+          r=json.loads(path.read_text())
+          assert r['historical_roi_metadata']=={'HS41':6,'HS42':6,'HS43':12}
+          assert r['historical_24_GSM_in_2026_S2']==0
+          assert r['gate']=='HOLD_NO_VERIFIED_PAPER_LINKED_2023_ROI_QUANT'
+          assert len(r['endpoints'])>=6
+          print('AUDIT_SCHEMA_PASS',len(r['endpoints']))
+          PY
+      - name: Save original-source evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-2023-original-24-roi-public-source
+          path: output/hs_spatial_historic24/
+          retention-days: 30
