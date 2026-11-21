@@ -1,25 +1,35 @@
-name: Migraine MTBLS13630 public metabolomics audit
+name: Migraine MTBLS13630 ISA quantification availability audit
 on:
   pull_request:
     paths:
       - 'projects/migraine_mtbls13630/**'
       - '.github/workflows/migraine-mtbls13630-audit.yml'
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
-  public-metadata-audit:
+  public-isa-quant-audit:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Audit MetaboLights metadata and sample links
+      - name: Verify Python syntax
+        run: |
+          python -m py_compile projects/migraine_mtbls13630/audit.py
+          python -m py_compile projects/migraine_mtbls13630/resolve_quant.py
+      - name: Audit API metadata
         run: python projects/migraine_mtbls13630/audit.py --out output/migraine_mtbls13630
-      - uses: actions/upload-artifact@v4
+      - name: Resolve participant, assay, MAF and processed data access
+        run: python projects/migraine_mtbls13630/resolve_quant.py --out output/migraine_mtbls13630_quant
+      - name: Upload public feasibility evidence
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: migraine-mtbls13630-public-metadata
-          path: output/migraine_mtbls13630/
-          retention-days: 30
+          name: migraine-mtbls13630-linked-quant-audit
+          path: |
+            output/migraine_mtbls13630/
+            output/migraine_mtbls13630_quant/
+          retention-days: 60
