@@ -43,23 +43,26 @@ def audit_table(kind,txt):
         genes=txt.splitlines()
         exact={g:[] for g in TARGETS}
         for i,ln in enumerate(genes):
-            vals=re.split(r'[\t;, ]+',ln.strip())
+            vals=[v.strip().strip(chr(34)) for v in re.split(r'[\t;, ]+',ln.strip())]
             for gene in TARGETS:
                 if gene in vals:exact[gene].append(i)
         result.update({'n_values':len(genes),'exact_target_index':exact,'head_fields':[l[:150] for l in genes[:3]]})
     if kind=='metadata':
         reader=csv.DictReader(io.StringIO(txt),delimiter='\t')
         col=reader.fieldnames or []
-        candidates=[c for c in col if any(term in c.lower() for term in ['donor','patient','diagnos','disease','condition','sample','cell.type','celltype','barcode','status','group','orig.ident'])]
+        candidates=[c for c in col if any(term in c.lower() for term in ['donor','patient','subject','library','diagnos','disease','condition','sample','cell.type','celltype','barcode','status','group','orig.ident'])]
         counts={c:collections.Counter() for c in candidates}
+        disease_subjects=collections.defaultdict(set)
         n=0
         col_examples={}
         for row in reader:
             n+=1
+            if row.get('Subject_Identity') and row.get('Disease_Identity'):
+                disease_subjects[row['Disease_Identity'].strip()].add(row['Subject_Identity'].strip())
             for c in candidates:
                 v=(row.get(c) or '').strip()
                 if v:counts[c][v]+=1
-        result.update({'n_rows':n,'n_cols':len(col),'headers':col[:80], 'profiling':{c:{'distinct':len(v),'top':v.most_common(12)} for c,v in counts.items()}})
+        result.update({'n_rows':n,'n_cols':len(col),'headers':col[:80], 'profiling':{c:{'distinct':len(v),'top':v.most_common(12)} for c,v in counts.items()}, 'subjects_by_disease':{k:len(v) for k,v in disease_subjects.items()}})
     return result
 
 def main():
@@ -68,13 +71,20 @@ def main():
             'research_goal':'Independent donor-aware cell type context for FCN3, GPX3, CFH, HPR, CPN1, C3',
             'evidence_type':'GEO public metadata only - NO expression matrix parsed, NO replication',
             'files':{},'audits':{}}
+    payloads={}
     for kind,name in NAMES.items():
         meta,txt=grab(name)
+        payloads[kind]=txt
         report['files'][kind]=meta
         res=audit_table(kind,txt)
         if '_barcodes' in res:res.pop('_barcodes')
         report['audits'][kind]=res
-    valid=all(x.get('status')=='OK' for x in report['audits'].values())
+    if payloads.get('metadata') and payloads.get('barcodes'):
+        meta_reader=csv.DictReader(io.StringIO(payloads['metadata']),delimiter='\t')
+        meta_barcodes={r['CellBarcode_Identity'].strip() for r in meta_reader}
+        raw_barcodes={b.strip() for b in payloads['barcodes'].splitlines() if b.strip()}
+        report['barcode_identity_check']={'metadata_unique':len(meta_barcodes),'raw_unique':len(raw_barcodes),'intersection':len(meta_barcodes & raw_barcodes),'exact_match':meta_barcodes==raw_barcodes}
+    valid=all(x.get('status')=='OK' for x in report['audits'].values()) and report.get('barcode_identity_check',{}).get('exact_match') is True
     report['decision']='GO_TO_TARGETED_MTX_IF_COHORT_MAPPING_CONFIRMED' if valid else 'HOLD_METADATA_OR_DOWNLOAD'
     report['warnings']=[
         'Metadata row count is cells/libraries, NOT donor count. Multiple libraries from one donor must be collapsed.',
