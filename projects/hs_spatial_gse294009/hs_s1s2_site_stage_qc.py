@@ -87,12 +87,15 @@ def main():
     if not ORIGINAL.is_file():raise ValueError('STOP: official XLSX absent from public supplement run')
     original_sha=hashlib.sha256(ORIGINAL.read_bytes()).hexdigest()
     if original_sha!=EXPECTED_SHA:raise ValueError('STOP: published workbook digest changed: '+original_sha)
-    found=collections.defaultdict(list);inventory=[]
+    found=collections.defaultdict(list);inventory=[];s2_no_gsm=[]
     for sheet,rows in source_sheet_rows(ORIGINAL):
         sheet_gsm=set()
+        untagged=[]
         for index,row in enumerate(rows,1):
             joined=' | '.join(row)
-            for code in set(GSM.findall(joined)):
+            row_gsm=set(GSM.findall(joined))
+            if not row_gsm:untagged.append({'row':index,'cells':row[:8]})
+            for code in row_gsm:
                 sheet_gsm.add(code)
                 if code in gsm:
                     patient=gsm[code]['patient']
@@ -100,6 +103,7 @@ def main():
                     found[code].append({'sheet':sheet,'row':index,'same_row_patient':same_row})
         inventory.append({'sheet':sheet,'nonempty_rows':len(rows),'gsm_total':len(sheet_gsm),
                           'crosswalk_gsm_found':len(sheet_gsm & set(gsm))})
+        if len(sheet_gsm & set(gsm))>=140:s2_no_gsm=untagged
     absent=sorted(set(gsm)-set(found))
     if absent:raise ValueError('STOP: '+str(len(absent))+' S2 GSM not independently found in official XLSX')
     exact=sum(any(hit['same_row_patient'] for hit in row) for row in found.values())
@@ -109,6 +113,7 @@ def main():
       'source_same_row_patient_explicit':exact,
       'patient_source_verdict':'EXPLICIT_SAME_ROW' if exact==146 else 'REVIEW_GROUPED_ROWS_NOT_PROVEN',
       'workbook_sheets':inventory,
+      'S2_no_GSM_row_candidates':s2_no_gsm,
       'cohort':{'GEO_HS_ROI':132,'GEO_AC_ROI':14,'manuscript_HS_ROI':156,
                 'not_in_GSE294009':24,'prior_24_original_source':'UNVERIFIED'},
       'HS12_discordant_GSM':[r['gsm'] for r in disc],
@@ -122,5 +127,5 @@ def main():
     print(json.dumps({'state':report['state'],'original_verified_GSM':len(found),
                       'explicit_patient_same_row':exact,'scenarios':counts,
                       'site_stage_preparation':site_rows,'compartments':coverage,
-                      'workbook_sheets':inventory},ensure_ascii=False))
+                      'workbook_sheets':inventory,'S2_no_GSM_row_candidates':s2_no_gsm},ensure_ascii=False))
 if __name__=='__main__':main()
