@@ -156,7 +156,6 @@ def therapy(out):
         with open(out/'hs_therapy_paired_exploratory.csv','w',newline='',encoding='utf8') as f:
             w=csv.DictWriter(f,fieldnames=list(candidate[0]));w.writeheader();w.writerows(candidate)
     audit['status']='QC_PAIRED_DESIGN_READY_EXPLORATORY' if len(les_pairs)>=5 else 'HOLD_TOO_FEW_PAIRS'
-    import csv
     with open(out/'hs_therapy_explicit_sample_map.csv','w',newline='',encoding='utf8') as f:
         w=csv.DictWriter(f,fieldnames=list(matched[0]));w.writeheader();w.writerows(matched)
     return audit
