@@ -51,7 +51,7 @@ def main():
     source.write_bytes(raw)
     from pypdf import PdfReader
     reader=PdfReader(io.BytesIO(raw))
-    texts=[page.extract_text(extraction_mode="layout") or "" for page in reader.pages]
+    texts=[page.extract_text() or "" for page in reader.pages]
     page_lens=[len(x) for x in texts]
     if sum(page_lens)<1000:raise ValueError("STOP: PDF has insufficient extractable text; manual page render needed")
     hits={k:[] for k in CATEGORIES}
@@ -64,6 +64,23 @@ def main():
                 hits[key].append({"source_page":i,"trigger":m.group(),
                                   "context":flat[start:stop]})
     for k in hits:hits[k]=hits[k][:40]
+    anchors={
+        "standR geomxNorm":r"geomxNorm",
+        "standR batch adjustment":r"RUV4|geomxBatchCorrection",
+        "limma batch adjustment":r"removeBatchEffect",
+        "differential expression":r"limma[\s-]*voom|eBayes|duplicateCorrelation",
+        "statistical structure":r"donor|paired|repeated|random\s+effect|blocking|design\s+matrix",
+        "negative controls/LOQ":r"\bLOQ\b|negative\s+control|limit\s+of\s+quantification",
+    }
+    anchor_context={}
+    for label,pattern in anchors.items():
+        rows=[]
+        for page_num,pagetext in enumerate(texts,1):
+            flat=" ".join(pagetext.split())
+            for match in list(re.finditer(pattern,flat,re.I))[:4]:
+                rows.append({"page":page_num,"anchor":match.group(),
+                             "text":flat[max(0,match.start()-240):min(len(flat),match.end()+670)]})
+        anchor_context[label]=rows[:8]
     # Expose page-labeled extracted text to actions logs only via another
     # local CI diagnostic script; do not upload the full supplementary PDF.
     (out/"SUPPLEMENT_METHODS_PAGE_TEXT.txt").write_text(
@@ -80,6 +97,8 @@ def main():
        "supplement_inventory":inventory,
        "method_occurrences":{k:len(v) for k,v in hits.items()},
        "method_contexts":hits,
+       "author_pipeline_anchor_context":anchor_context,
+       "pdf_text_extraction_mode":"pypdf_plain_source_order",
        "claims": {"paper_LOQ_parameters_verified":False,
                   "paper_Q3_normalization_verified":False,
                   "paper_batch_strategy_verified":False,
