@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'projects/hs_spatial_gse294009/run_standr_ruv4_feasibility.R'
+      - 'projects/hs_spatial_gse294009/full_refit_slide_loo.R'
       - '.github/workflows/hs-geomx-standr-ruv4-pilot.yml'
   workflow_dispatch:
 permissions:
@@ -90,6 +91,47 @@ jobs:
               assert not x['author_equivalent'] and not x['early_late_de_confirmed']
           print('STANDR_RUV4_2_NORMALIZATION_METHODS_MODEL_FIT_PASS_NO_PUBLICATION_CLAIM')
           PY
+      - name: Fully re-estimate standR RUV4 k2 for every withheld donor; test explicit slide model
+        run: |
+          Rscript -e 'invisible(parse(file="projects/hs_spatial_gse294009/full_refit_slide_loo.R"));cat("FULL_REFIT_R_SYNTAX_PASS\\n")'
+          Rscript projects/hs_spatial_gse294009/full_refit_slide_loo.R output/hs_spatial_full_matrix output/hs_standr_design_preflight output/hs_standr_full_refit
+      - name: Verify all source/model gates without cherry-picking stage effect
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('output/hs_standr_full_refit/HS_FULL_REFIT_SLIDE_DONOR_LOO_AUDIT.json')
+          a=json.loads(p.read_text())
+          assert a['status']=='FULL_NUISANCE_REESTIMATED_DONOR_LOO_AND_SLIDE_DESIGN_AUDIT__NOT_PAPER_REPLICATION'
+          assert (a['n_source_HS_roi'],a['n_primary_HS_roi'],a['n_primary_donors'])==(132,82,10)
+          assert a['n_primary_deep_roi']==24
+          assert not a['original_156_ROI_reproduced'] and not a['confirmed_DE_biomarker']
+          assert a['full_reestimation_per_heldout_donor'] and a['slide_fixed_effect_explicitly_tested']
+          assert len(a['summaries'])==4
+          for norm in ['TMM','upperquartile']:
+              entries=a['results'][norm]
+              assert len(entries)==22
+              for mode in ['Stage_RUV','Stage_Slide_RUV']:
+                  summary=a['summaries'][norm+'__'+mode]
+                  assert summary['n_donors_loo']==10
+                  assert 0<=summary['n_successful_refits']<=10
+                  assert summary['n_HOLD']+summary['n_successful_refits']==10
+                  print('SCIENTIFIC_REFIT_GATES',norm,mode,
+                        summary['base_status'],summary['n_successful_refits'],
+                        summary['all_success_and_same_direction'],summary['loo_effect_range'])
+              for result in entries.values():
+                  assert result['full_nuisance_reestimation'] is True
+                  assert result['status'] in ('PASS_MODEL_FIT','HOLD_MODEL_ERROR','HOLD_RUV_ERROR')
+          print('SOURCE_AND_MODEL_ACCOUNTABILITY_PASS: no significance claim')
+          PY
+      - name: Preserve separate donor-wise nuisance-reestimated model sensitivity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-132-full-nuisance-LOO-and-slide-sensitivity
+          path: output/hs_standr_full_refit/
+          retention-days: 45
+          if-no-files-found: warn
       - name: Preserve bounded exploratory model diagnostics and source provenance
         if: always()
         uses: actions/upload-artifact@v4
