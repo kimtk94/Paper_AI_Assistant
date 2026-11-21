@@ -10,13 +10,13 @@ permissions:
   actions: read
 jobs:
   ruv4-pilot:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: r-lib/actions/setup-r@v2
         with:
-          r-version: 'release'
+          r-version: '4.5.2'
           use-public-rspm: true
       - uses: actions/setup-python@v5
         with:
@@ -35,11 +35,17 @@ jobs:
           run-id: 44909306514
           github-token: ${{ github.token }}
           path: output/hs_standr_design_preflight
+      - name: Install Ubuntu development and run-time libraries required by Rhtslib and magick
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libcurl4-openssl-dev libmagick++-dev imagemagick libssl-dev libxml2-dev libpng-dev libjpeg-dev libtiff-dev libgit2-dev libicu-dev libfontconfig1-dev libfreetype6-dev libharfbuzz-dev libfribidi-dev libbz2-dev liblzma-dev zlib1g-dev libx11-dev libgsl-dev
+          pkg-config --modversion libcurl
+          pkg-config --modversion Magick++
       - name: Install standR and donor-blocked limma-voom runtime
         run: |
           Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org")'
-          Rscript -e 'BiocManager::install(c("standR","edgeR","limma","SpatialExperiment","SummarizedExperiment","S4Vectors","statmod","jsonlite"), ask=FALSE, update=FALSE, quiet=TRUE, Ncpus=2)'
-          Rscript -e 'stopifnot(all(vapply(c("standR","edgeR","limma","SpatialExperiment","SummarizedExperiment","S4Vectors","statmod","jsonlite"), requireNamespace, logical(1), quietly=TRUE)));cat("STANDR_ENVIRONMENT_PASS",as.character(packageVersion("standR")),"\n")'
+          Rscript -e 'BiocManager::install(c("standR","edgeR","limma","SpatialExperiment","SummarizedExperiment","S4Vectors","statmod","jsonlite"), ask=FALSE, update=FALSE, quiet=TRUE, Ncpus=3)'
+          Rscript -e 'stopifnot(all(vapply(c("standR","edgeR","limma","SpatialExperiment","SummarizedExperiment","S4Vectors","statmod","jsonlite"), requireNamespace, logical(1), quietly=TRUE)));cat("STANDR_ENVIRONMENT_PASS",as.character(packageVersion("standR"))," R",as.character(getRversion()),"\n")'
       - name: Parse R analysis and inspect input checksums
         run: |
           Rscript -e 'parse(file="projects/hs_spatial_gse294009/run_standr_ruv4_feasibility.R");cat("R_PARSER_PASS\n")'
