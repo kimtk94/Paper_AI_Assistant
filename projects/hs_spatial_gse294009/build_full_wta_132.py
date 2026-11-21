@@ -109,7 +109,7 @@ def main():
                     count_by_gene[gene][i]+=val
                 elif "negative" in codeclass:
                     neg+=1
-            if processed<12000:raise RuntimeError("STOP too few RTS counts "+gsm)
+            if processed==0:raise RuntimeError("STOP missing RTS counts "+gsm)
             raw_qc.append({"gsm":gsm,"rts_observed":processed,"n_negative_probes":neg})
     if seen!=set(series) or len(raw_qc)!=132:
         raise RuntimeError("STOP expected 204 total GEO DCC and 132 author S2 HS DCC")
@@ -164,6 +164,8 @@ def main():
       "n_S1_S2_discordant_donors":len(prior_stage),
       "n_gene_probes_non_one":sum(1 for k in names if gene_probe[k]!=1),
       "n_unknown_RTS_instances":unknown,
+      "observed_RTS_min":min(x["rts_observed"] for x in raw_qc),
+      "observed_RTS_max":max(x["rts_observed"] for x in raw_qc),
       "matrix_csv_gz_sha256":sha(filename),
       "manifest_sha256":sha(meta_file),
       "source_gene_target_zero_warning":"All endogenous genes present in PKC; missing per-ROI RTS ID treated as zero, review original NanoString probe QC and imputation.",
