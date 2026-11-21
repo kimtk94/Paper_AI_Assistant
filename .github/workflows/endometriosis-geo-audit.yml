@@ -41,6 +41,7 @@ jobs:
             output/endometriosis_gse283755/pca_samples.csv
             output/endometriosis_gse283755/candidate_direction_checks.csv
             output/endometriosis_gse283755/DESEQ2_REPORT.md
+            output/endometriosis_gse283755/AUTHOR_FILTER_REPORT.md
             output/endometriosis_gse283755/deseq2_*.csv
           if-no-files-found: warn
           retention-days: 30
