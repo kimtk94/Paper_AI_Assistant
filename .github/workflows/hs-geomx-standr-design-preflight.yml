@@ -1,0 +1,53 @@
+name: HS standR preflight independent donor and design rank
+on:
+  pull_request:
+    paths:
+      - 'projects/hs_spatial_gse294009/standr_design_preflight.py'
+      - '.github/workflows/hs-geomx-standr-design-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  ffpe-primary-model-design:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Reuse checksum-pinned 132 ROI all-gene matrix
+        uses: actions/download-artifact@v4
+        with:
+          name: hs-2026-132-full-wta-source-counts
+          run-id: 44909141520
+          github-token: ${{ github.token }}
+          path: output/hs_spatial_full_matrix
+      - name: Test independence, site, slide and S1/S2 confounding
+        run: |
+          python -m py_compile projects/hs_spatial_gse294009/standr_design_preflight.py
+          python projects/hs_spatial_gse294009/standr_design_preflight.py --input output/hs_spatial_full_matrix --out output/hs_standr_design_preflight
+      - name: Fail if design or independent patient population is misrepresented
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/hs_standr_design_preflight/HS_132_STANDR_MODEL_PREFLIGHT.json').read_text())
+          assert r['status']=='PRIMARY_FFPE_SOURCE_AND_DESIGN_READY__CONFIRMATORY_STAGE_DE_HOLD'
+          assert (r['n_gene_rows'],r['n_geo_hs_ROI'],r['n_HS_donors'])==(18676,132,15)
+          assert (r['primary_ROIs'],r['primary_early_ROIs'],r['primary_late_ROIs'])==(82,57,25)
+          assert (r['primary_early_independent_donors'],r['primary_late_independent_donors'])==(7,3)
+          assert not r['same_site_primary_model_rank']['stage_estimable_with_donor_fixed_effect']
+          assert r['limma_stage_design_with_donor_fixed_effect']=='FORBIDDEN_ALIASED'
+          assert r['DE_inference'].startswith('HOLD')
+          print('STANDR_DESIGN_PREFLIGHT_VALID',r['same_site_primary_model_rank'])
+          PY
+      - name: Retain donor rank diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-132-stanDR-donor-rank-preflight
+          path: output/hs_standr_design_preflight/
+          retention-days: 45
+          if-no-files-found: warn
