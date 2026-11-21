@@ -1,0 +1,86 @@
+name: HS standR RUV4 k2 donor-blocked voom 132 ROI feasibility
+on:
+  pull_request:
+    paths:
+      - 'projects/hs_spatial_gse294009/run_standr_ruv4_feasibility.R'
+      - '.github/workflows/hs-geomx-standr-ruv4-pilot.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  ruv4-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore checksum-verified 18,676 gene x 132 HS ROI raw counts
+        uses: actions/download-artifact@v4
+        with:
+          name: hs-2026-132-full-wta-source-counts
+          run-id: 44909141520
+          github-token: ${{ github.token }}
+          path: output/hs_spatial_full_matrix
+      - name: Restore verified independent donor and slide-rank gate
+        uses: actions/download-artifact@v4
+        with:
+          name: hs-132-stanDR-donor-rank-preflight
+          run-id: 44909306514
+          github-token: ${{ github.token }}
+          path: output/hs_standr_design_preflight
+      - name: Install standR and donor-blocked limma-voom runtime
+        run: |
+          Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org")'
+          Rscript -e 'BiocManager::install(c("standR","edgeR","limma","SpatialExperiment","SummarizedExperiment","S4Vectors","statmod","jsonlite"), ask=FALSE, update=FALSE, quiet=TRUE, Ncpus=2)'
+          Rscript -e 'stopifnot(all(vapply(c("standR","edgeR","limma","SpatialExperiment","SummarizedExperiment","S4Vectors","statmod","jsonlite"), requireNamespace, logical(1), quietly=TRUE)));cat("STANDR_ENVIRONMENT_PASS",as.character(packageVersion("standR")),"\n")'
+      - name: Parse R analysis and inspect input checksums
+        run: |
+          Rscript -e 'parse(file="projects/hs_spatial_gse294009/run_standr_ruv4_feasibility.R");cat("R_PARSER_PASS\n")'
+          python - <<'PY'
+          import csv,gzip,hashlib,json
+          from pathlib import Path
+          p=Path('output/hs_spatial_full_matrix')
+          a=json.loads((p/'HS_132_FULL_WTA_SOURCE_AUDIT.json').read_text())
+          assert hashlib.sha256((p/'HS_132_HS_GENE_WTA_COUNTS.csv.gz').read_bytes()).hexdigest()==a['matrix_csv_gz_sha256']
+          assert (a['endogenous_gene_rows'],a['included_S2_GEO_HS_ROI'])==(18676,132)
+          with gzip.open(p/'HS_132_HS_GENE_WTA_COUNTS.csv.gz','rt') as f:assert len(next(csv.reader(f)))==133
+          print('RUV4_FULL_COUNTS_SOURCE_PASS')
+          PY
+      - name: Execute standR TMM/upperquartile RUV4(k2) and donor-blocked voom
+        run: |
+          Rscript projects/hs_spatial_gse294009/run_standr_ruv4_feasibility.R output/hs_spatial_full_matrix output/hs_standr_design_preflight output/hs_standr_ruv4
+      - name: Reject false 156-ROI or author-FDR reproduction claims
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('output/hs_standr_ruv4/HS_STANDR_RUV4_VOOM_FEASIBILITY.json')
+          a=json.loads(p.read_text())
+          assert a['status']=='TWO_NORMALIZATION_ROBUST_FEASIBILITY_COMPLETED__NOT_PAPER_REPLICATION'
+          assert not a['complete_156_author_FDR_reproduction']
+          assert not a['confirmatory_stage_biomarker']
+          for method in ['TMM','upperquartile']:
+              x=a['results'][method]
+              assert x['n_Yonsei_FFPE_HS_ROI']==82
+              assert x['n_deep_dermis_ROI']==24
+              assert (x['n_deep_Early_donors'],x['n_deep_Late_donors'])==(7,3)
+              assert x['n_RUV_factors']==2
+              assert x['full_design_rank']==x['full_design_ncol']
+              assert not x['author_equivalent'] and not x['early_late_de_confirmed']
+          print('STANDR_RUV4_2_NORMALIZATION_METHODS_MODEL_FIT_PASS_NO_PUBLICATION_CLAIM')
+          PY
+      - name: Preserve bounded exploratory model diagnostics and source provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-132-stanDR-RUV4-k2-donor-blocked-voom-pilot
+          path: output/hs_standr_ruv4/
+          retention-days: 45
+          if-no-files-found: warn
