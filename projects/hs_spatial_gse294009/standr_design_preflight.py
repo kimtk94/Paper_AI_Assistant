@@ -42,7 +42,7 @@ def cols_stage_slider(ms):
       "stage_estimable_after_slide_fixed_effect":rank(with_stage)>rank(base),
       "n_donors":len(donors),
       "rank_intercept_donor":rank(dono),
-      "rank_donor_plus_stage":rank([a+[b] for a,b in zip(dono,late)] for a,b in zip(dono,late)) if False else rank([a+[b] for a,b in zip(dono,late)]),
+      "rank_donor_plus_stage":rank([a+[b] for a,b in zip(dono,late)]),
       "stage_estimable_with_donor_fixed_effect":rank([a+[b] for a,b in zip(dono,late)])>rank(dono),
       "n_late_independent_donors":len({x["donor"] for x in ms if x["stage_s2"]=="Late"}),
       "n_early_independent_donors":len({x["donor"] for x in ms if x["stage_s2"]=="Early"}),
