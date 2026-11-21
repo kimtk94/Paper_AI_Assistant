@@ -49,6 +49,23 @@ def therapy(out):
         for c in mat.columns:
             if c in name:
                 mapping[c]=link['accession']
+    # Individual RAW archive may preserve explicit GSM-to-internal-library links.
+    raw_url=f'{series_path(acc)}/suppl/{acc}_RAW.tar'
+    raw_body,raw_status=urlopen(raw_url,maximum=13_000_000,timeout=70)
+    audit['raw_tar_probe']={'download':raw_status}
+    if raw_body:
+        try:
+            with tarfile.open(fileobj=io.BytesIO(raw_body),mode='r:*') as tf:
+                member_names=[m.name for m in tf.getmembers() if m.isfile()]
+            audit['raw_tar_probe']['member_count']=len(member_names)
+            audit['raw_tar_probe']['first_names']=member_names[:15]
+            audit['raw_tar_probe']['n_internal_column_names_in_members']=sum(any(c in n for n in member_names) for c in mat.columns)
+            for name in member_names:
+                gsm=re.search(r'GSM\d+',name)
+                if gsm:
+                    for c in mat.columns:
+                        if c in name:mapping[c]=gsm.group(0)
+        except Exception as e:audit['raw_tar_probe']['error']=str(e)[:250]
     audit['explicit_column_map_n']=len(mapping)
     audit['n_unique_gsm_from_map']=len(set(mapping.values()))
     audit['exemplar_map']=dict(list(mapping.items())[:8])
@@ -103,14 +120,15 @@ def nmosd(out):
     audit['processed']=status
     if body is None:return audit
     # Stream gzipped CSV, no cells treated as patient replicates. Extract *only* target gene vectors.
-    gz=gzip.GzipFile(fileobj=io.BytesIO(body)); reader=csv.reader(io.TextIOWrapper(gz,encoding='utf8-sig',errors='replace'))
+    gz=gzip.GzipFile(fileobj=io.BytesIO(body)); reader=csv.reader(io.TextIOWrapper(gz,encoding='utf-8-sig',errors='replace'))
     header=next(reader)
     audit['columns']=len(header);audit['header_head']=header[:10]
     mapped={col:tracks[col] for col in header if col in tracks}
     audit['matched_track_columns']=len(mapped)
     audit['unique_matched_GSM']=len({s['accession'] for s in mapped.values()})
-    candidate=[]
+    candidate=[]; first_genes=[]
     for i,row in enumerate(reader):
+        if i<8: first_genes.append(row[:4])
         if len(row)!=len(header):continue
         # Gene_id is symbol or Ensembl depending on GEO export.
         names=[str(row[j]).upper() for j in range(min(4,len(row)))]
@@ -130,6 +148,7 @@ def nmosd(out):
             for k,v in stats.items():
                 candidate.append({'gene':g,'stimulation_title':k,'cells_with_read':len(v),
                   'fraction_detected':round(sum(vv>0 for vv in v)/len(v),4), 'mean_raw_count':round(sum(v)/len(v),3)})
+    audit['first_gene_row_names']=first_genes
     audit['candidate_gene_by_title']=candidate
     audit['status']='CELL_LEVEL_MECHANISM_ONLY_NO_PATIENT_DIFFERENTIAL' if len(mapped)>=800 else 'HOLD_CELL_MAPPING'
     with open(out/'nmosd_gene_descriptive.csv','w',newline='',encoding='utf8') as f:
