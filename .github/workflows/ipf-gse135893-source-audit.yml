@@ -1,0 +1,28 @@
+name: IPF GSE135893 diagnosis-source confounding audit
+on:
+  pull_request:
+    paths:
+      - 'projects/ipf_pxd010965/source_batch_audit.py'
+      - '.github/workflows/ipf-gse135893-source-audit.yml'
+  workflow_dispatch:
+jobs:
+  donor-source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify Python scripts
+        run: python -m py_compile projects/ipf_pxd010965/source_batch_audit.py projects/ipf_pxd010965/gse135893_metadata.py
+      - name: Count per-source donors and diagnostics
+        run: python projects/ipf_pxd010965/source_batch_audit.py --out output/ipf_gse135893_source
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gse135893-donor-source
+          path: output/ipf_gse135893_source/
+          retention-days: 30
