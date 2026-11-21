@@ -52,7 +52,6 @@ def main():
                     picks.append({'file':m.name,'member_bytes':m.size,'summary':xml_summary(b,limit=35)})
                 audit['dcc_samples']=picks
                 if picks:
-                    import re
                     b=archive.extractfile(files[0]).read()
                     if files[0].name.endswith('.gz'):b=gzip.decompress(b)
                     dccs=dict((k,int(v)) for k,v in re.findall(rb'(?m)^(RTS\d+),(\d+)\r?$',b))
