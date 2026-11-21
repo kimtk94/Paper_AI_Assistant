@@ -1,0 +1,32 @@
+name: Novogene Top 7 remaining four public data baseline
+on:
+  pull_request:
+    paths:
+      - 'projects/top7_remaining4/**'
+      - '.github/workflows/novogene-top7-remaining4-audit.yml'
+  workflow_dispatch:
+jobs:
+  public-dataset-audit:
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [hs_therapy, musk_mg, nmosd, hs_spatial]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install public-data reader
+        run: python -m pip install pandas==2.2.3
+      - name: Run public GEO scientific design audit
+        run: python projects/top7_remaining4/geo_baseline.py --role '${{ matrix.role }}' --out 'output/top7_remaining4/${{ matrix.role }}'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: top7-${{ matrix.role }}-public-audit
+          path: output/top7_remaining4/${{ matrix.role }}/
+          if-no-files-found: warn
+          retention-days: 45
