@@ -114,6 +114,57 @@ for (norm_method in c("TMM","upperquartile")) {
   gene <- "JCHAIN"
   if (!(gene %in% rownames(fit2$coefficients))) stop("JCHAIN_FILTERED_OUT")
   logfc <- unname(fit2$coefficients[gene,1L])
+
+  # CONDITIONAL sensitivity only: drop one *independent donor* at a time
+  # from the downstream voom/limma fitting, leaving the upstream 82-ROI
+  # standR normalization/NCG/RUV4 nuisance estimates fixed.
+  # Since upstream nuisance estimates used all donors, this IS NOT
+  # a fully independent end-to-end donor holdout or paper replication.
+  excluded <- unique(as.character(deep_md$Donor))
+  loo <- lapply(excluded, function(donor_out) {
+    train <- as.character(deep_md$Donor) != donor_out
+    stages <- droplevels(deep_md$Stage[train])
+    late_donors <- length(unique(as.character(deep_md$Donor[train & deep_md$Stage == "Late"])))
+    early_donors <- length(unique(as.character(deep_md$Donor[train & deep_md$Stage == "Early"])))
+    if (min(early_donors,late_donors) < 2L)
+      return(list(withheld_donor=donor_out, status="HOLD_LT2_DONORS",logFC=NULL))
+    partial <- tryCatch({
+      di <- edgeR::DGEList(counts=mat[,deep,drop=FALSE][,train,drop=FALSE])
+      di <- edgeR::calcNormFactors(di, method=norm_method)
+      design_i <- stats::model.matrix(~0 + Stage + ruv_W1 + ruv_W2,
+                                     data=deep_cd[train,,drop=FALSE])
+      if (qr(design_i)$rank != ncol(design_i)) stop("MODEL_RANK_DEFICIENT")
+      retained <- edgeR::filterByExpr(di,design=design_i)
+      if (!retained[gene %in% rownames(di)] || sum(retained)<500L)
+        stop("JCHAIN_FILTERED_OR_FEATURE_COUNT_LOW")
+      di <- di[retained,,keep.lib.sizes=FALSE]
+      z0 <- limma::voom(di, design_i, plot=FALSE)
+      rho_i <- limma::duplicateCorrelation(z0, design=design_i,
+                   block=droplevels(deep_md$Donor[train]))$consensus.correlation
+      if (!is.finite(rho_i) || abs(rho_i)>=1) stop("DONOR_CORRELATION_UNSTABLE")
+      z1 <- limma::voom(di,design_i,block=droplevels(deep_md$Donor[train]),
+                        correlation=rho_i, plot=FALSE)
+      fi <- limma::lmFit(z1,design=design_i,block=droplevels(deep_md$Donor[train]),
+                         correlation=rho_i)
+      fi <- limma::contrasts.fit(fi,limma::makeContrasts(StageLate-StageEarly,levels=design_i))
+      ef <- unname(fi$coefficients[gene,1L])
+      if (!is.finite(ef)) stop("JCHAIN_EFFECT_NOT_FINITE")
+      list(withheld_donor=donor_out,status="PASS",
+           early_independent_donors=early_donors,
+           late_independent_donors=late_donors,
+           effect_log2_Late_over_Early=as.numeric(ef),
+           donor_correlation=as.numeric(rho_i))
+    },error=function(e)list(withheld_donor=donor_out,status="HOLD_MODEL_ERROR",
+                             error=conditionMessage(e),logFC=NULL))
+    partial
+  })
+  passed_loo <- vapply(loo,function(z)identical(z$status,"PASS"),logical(1))
+  effects_loo <- vapply(loo[passed_loo],function(z)z$effect_log2_Late_over_Early,numeric(1))
+  robust_sign <- length(effects_loo)==length(excluded) &&
+                 all(sign(effects_loo)==sign(logfc))
+  cat("CONDITIONAL_LOO",norm_method,"PASS",sum(passed_loo),"/",length(excluded),
+      "same_sign",robust_sign,
+      "range",if(length(effects_loo)) paste(round(range(effects_loo),5),collapse=",") else "NONE","\n")
   result <- list(
     norm_method=norm_method,
     standR_version=as.character(utils::packageVersion("standR")),
@@ -131,6 +182,13 @@ for (norm_method in c("TMM","upperquartile")) {
     full_design_rank=qr(design)$rank,
     full_design_ncol=ncol(design),
     JCHAIN_exploratory_model_logFC=unname(logfc),
+    JCHAIN_conditional_LOO=list(
+      description="Leave-one-donor-out downstream voom/limma only, with all-donor-estimated standR normalization and RUV nuisance factors fixed; NOT unbiased external/fully refit validation.",
+      n_withheld_independent_donors=length(excluded),
+      n_model_success=sum(passed_loo),
+      all_valid_and_same_sign=robust_sign,
+      effect_range=if (length(effects_loo)) unname(range(effects_loo)) else c(NA_real_,NA_real_),
+      withheld_donor_results=loo),
     # No nominal p, adjusted p or biomarker call emitted; source
     # is only a 132-ROI subset with unknown original normalization.
     p_FDR_published=FALSE,
