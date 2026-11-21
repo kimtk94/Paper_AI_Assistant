@@ -10,7 +10,7 @@ permissions:
 jobs:
   public-data-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,6 +21,12 @@ jobs:
       - run: pip install -r projects/endometriosis_gse283755/requirements.txt
       - name: Inspect GEO processed matrix
         run: python projects/endometriosis_gse283755/run.py --output output/endometriosis_gse283755
+      - name: Install R DESeq2 for source count-model verification
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y r-bioc-deseq2
+      - name: DESeq2 on GEO raw Read_Count matrix
+        run: Rscript projects/endometriosis_gse283755/deseq2.R output/endometriosis_gse283755/raw_counts_by_gene_symbol.csv output/endometriosis_gse283755
       - name: Upload audit outputs (no raw XLSX)
         if: always()
         uses: actions/upload-artifact@v4
@@ -34,5 +40,7 @@ jobs:
             output/endometriosis_gse283755/exploratory_gene_effects.csv
             output/endometriosis_gse283755/pca_samples.csv
             output/endometriosis_gse283755/candidate_direction_checks.csv
+            output/endometriosis_gse283755/DESEQ2_REPORT.md
+            output/endometriosis_gse283755/deseq2_*.csv
           if-no-files-found: warn
           retention-days: 30
