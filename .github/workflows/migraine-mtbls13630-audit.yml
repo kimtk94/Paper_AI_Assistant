@@ -1,0 +1,25 @@
+name: Migraine MTBLS13630 public metabolomics audit
+on:
+  pull_request:
+    paths:
+      - 'projects/migraine_mtbls13630/**'
+      - '.github/workflows/migraine-mtbls13630-audit.yml'
+  workflow_dispatch:
+jobs:
+  public-metadata-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit MetaboLights metadata and sample links
+        run: python projects/migraine_mtbls13630/audit.py --out output/migraine_mtbls13630
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: migraine-mtbls13630-public-metadata
+          path: output/migraine_mtbls13630/
+          retention-days: 30
