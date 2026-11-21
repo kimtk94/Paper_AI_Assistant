@@ -1,0 +1,28 @@
+name: IPF PXD010965 public PRIDE result feasibility audit
+on:
+  pull_request:
+    paths:
+      - 'projects/ipf_pxd010965/**'
+      - '.github/workflows/ipf-pxd010965-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check script syntax
+        run: python -m py_compile projects/ipf_pxd010965/audit.py
+      - name: Audit public PRIDE metadata and file list
+        run: python projects/ipf_pxd010965/audit.py --out output/ipf_pxd010965
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ipf-pxd010965-public-audit
+          path: output/ipf_pxd010965/
+          retention-days: 60
