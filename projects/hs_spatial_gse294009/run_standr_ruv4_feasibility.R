@@ -123,7 +123,6 @@ for (norm_method in c("TMM","upperquartile")) {
   excluded <- unique(as.character(deep_md$Donor))
   loo <- lapply(excluded, function(donor_out) {
     train <- as.character(deep_md$Donor) != donor_out
-    stages <- droplevels(deep_md$Stage[train])
     late_donors <- length(unique(as.character(deep_md$Donor[train & deep_md$Stage == "Late"])))
     early_donors <- length(unique(as.character(deep_md$Donor[train & deep_md$Stage == "Early"])))
     if (min(early_donors,late_donors) < 2L)
@@ -135,7 +134,8 @@ for (norm_method in c("TMM","upperquartile")) {
                                      data=deep_cd[train,,drop=FALSE])
       if (qr(design_i)$rank != ncol(design_i)) stop("MODEL_RANK_DEFICIENT")
       retained <- edgeR::filterByExpr(di,design=design_i)
-      if (!retained[gene %in% rownames(di)] || sum(retained)<500L)
+      gene_index <- match(gene,rownames(di))
+      if (is.na(gene_index) || !retained[gene_index] || sum(retained)<500L)
         stop("JCHAIN_FILTERED_OR_FEATURE_COUNT_LOW")
       di <- di[retained,,keep.lib.sizes=FALSE]
       z0 <- limma::voom(di, design_i, plot=FALSE)
