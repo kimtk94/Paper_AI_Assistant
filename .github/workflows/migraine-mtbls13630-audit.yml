@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'projects/migraine_mtbls13630/**'
+      - 'tests/test_migraine_direct_source.py'
       - '.github/workflows/migraine-mtbls13630-audit.yml'
   workflow_dispatch:
 permissions:
@@ -32,4 +33,26 @@ jobs:
           path: |
             output/migraine_mtbls13630/
             output/migraine_mtbls13630_quant/
+          retention-days: 60
+  direct-original-source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and test source gates offline
+        run: |
+          python -m py_compile projects/migraine_mtbls13630/direct_source_audit.py
+          python -m unittest discover -s tests -p 'test_migraine_direct_source.py' -v
+      - name: Read direct original MAFs and public directory inventories
+        run: python projects/migraine_mtbls13630/direct_source_audit.py --out output/migraine_direct_source/audit.json
+      - name: Preserve bounded aggregate audit only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migraine-direct-original-source-audit
+          path: output/migraine_direct_source/audit.json
+          if-no-files-found: warn
           retention-days: 60
