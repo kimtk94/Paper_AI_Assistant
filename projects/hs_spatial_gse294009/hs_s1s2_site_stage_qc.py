@@ -36,6 +36,21 @@ def source_sheet_rows(path):
                 if values:rows.append(values)
             yield name,rows
 
+def verify_explicit_s2_mapping(found, expected_gsms):
+    """Pass only on a unique explicit GSM+patient pair in source S2."""
+    expected=set(expected_gsms)
+    missing=sorted(expected-set(found))
+    if missing:
+        raise ValueError('STOP: '+str(len(missing))+' S2 GSM not independently found in official XLSX')
+    ambiguous={code:hits for code,hits in found.items()
+               if code in expected and (len(hits)!=1 or hits[0]['sheet']!='xl/worksheets/sheet2.xml')}
+    if ambiguous:
+        raise ValueError('STOP: S2 GSM duplicated or mapped outside the author S2 sheet: '+str(sorted(ambiguous)[:8]))
+    exact=sum(bool(found[code][0]['same_row_patient']) for code in expected)
+    if exact!=len(expected):
+        raise ValueError('STOP: source S2 GSM/patient identity not explicit on the same row: '+str(exact)+'/'+str(len(expected)))
+    return exact
+
 def main():
     ROOT.mkdir(parents=True,exist_ok=True)
     with CROSS.open(encoding='utf-8-sig',newline='') as f:
@@ -134,18 +149,7 @@ def main():
     with (ROOT/'HISTORIC_24_EXPECTED_ROI_MANIFEST.csv').open('w',newline='',encoding='utf-8') as dest:
         writer=csv.DictWriter(dest,fieldnames=list(historic_rows[0]))
         writer.writeheader();writer.writerows(historic_rows)
-    absent=sorted(set(gsm)-set(found))
-    if absent:raise ValueError('STOP: '+str(len(absent))+' S2 GSM not independently found in official XLSX')
-    # A workbook that merely contains the GSM somewhere is insufficient:
-    # every source S2 GSM must occur exactly once, on the same row as its
-    # explicitly named patient, or the metadata linkage is not verified.
-    ambiguous={code:hits for code,hits in found.items()
-               if len(hits)!=1 or hits[0]['sheet']!='xl/worksheets/sheet2.xml'}
-    if ambiguous:
-        raise ValueError('STOP: S2 GSM duplicated or mapped outside the author S2 sheet: '+str(sorted(ambiguous)[:8]))
-    exact=sum(bool(hits[0]['same_row_patient']) for hits in found.values())
-    if exact!=len(gsm):
-        raise ValueError('STOP: source S2 GSM/patient identity not explicit on the same row: '+str(exact)+'/'+str(len(gsm)))
+    exact=verify_explicit_s2_mapping(found,gsm)
     report={
       'state':'PASS_S2_GSM_IN_SOURCE__HOLD_CAUSAL_INFERENCE',
       'source_sha256':original_sha,'source_GSM_found':len(found),
