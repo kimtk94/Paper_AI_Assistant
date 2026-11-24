@@ -1,0 +1,52 @@
+name: HS GeoMx fast LOQ Q3 Q90 patient-aware QC
+# Computationally expensive, external-data workflows must be launched intentionally.
+# PRs run the lightweight research-static-checks workflow instead.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  frozen-raw-quant-qc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download verified raw-DCC PKC Q3/Q90 and negative-control archive
+        uses: actions/download-artifact@v4
+        with:
+          name: hs-spatial-gse294009-file-and-donor-inventory
+          run-id: 44907357144
+          github-token: ${{ github.token }}
+          path: output/hs_spatial_gse294009
+      - name: Run independent-donor LOQ Q3 Q90 robustness audit
+        run: |
+          python -m py_compile projects/hs_spatial_gse294009/loq_q3_robustness.py
+          python projects/hs_spatial_gse294009/loq_q3_robustness.py --input output/hs_spatial_gse294009 --out output/hs_loq_sensitivity
+      - name: Strict provenance and no-inference checks
+        run: |
+          python - <<'PY'
+          import csv,json
+          from pathlib import Path
+          p=Path('output/hs_loq_sensitivity')
+          a=json.loads((p/'HS_LOQ_Q3_Q90_AUDIT.json').read_text())
+          assert a['status']=='SOURCE_LOQ_PROXY_AUDITED__PATIENT_DESCRIPTIVE_ONLY'
+          assert (a['n_geo_roi'],a['n_hs_s2_roi'],a['n_hs_donors'])==(204,132,15)
+          assert a['analysis']['p_values_computed'] is False
+          assert a['analysis']['FDR_computed'] is False
+          with (p/'HS_QC_CANDIDATE_DECISION.csv').open() as f:rows=list(csv.DictReader(f))
+          assert len(rows)==24
+          assert len({(x['gene'],x['compartment']) for x in rows})==24
+          print('PASS_QC_PROVENANCE_NO_INFERENCE',a['n_hs_roi_with_negative_probe_loq'],'negative-probe ROI')
+          PY
+      - name: Save quantitative QC artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-geomx-2026-loq-q3-q90-fast-qc
+          path: output/hs_loq_sensitivity/
+          retention-days: 45
+          if-no-files-found: error

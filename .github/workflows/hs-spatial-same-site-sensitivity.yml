@@ -1,0 +1,70 @@
+name: HS GSE294009 same-site donor-level targeted sensitivity
+# Computationally expensive, external-data workflows must be launched intentionally.
+# PRs run the lightweight research-static-checks workflow instead.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  paired-source-descriptive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore prior verified raw DCC and PKC reconstruction
+        uses: actions/download-artifact@v4
+        with:
+          name: hs-spatial-gse294009-file-and-donor-inventory
+          run-id: 44899730834
+          github-token: ${{ github.token }}
+          path: output/hs_spatial_gse294009
+      - name: Verify cached source accession and targeted expression inputs
+        run: |
+          python - <<'PY'
+          import csv,json
+          from pathlib import Path
+          root=Path('output/hs_spatial_gse294009')
+          rec=json.loads((root/'RECONSTRUCTION_AUDIT.json').read_text())
+          assert rec['accession']=='GSE294009' and rec['GSMs_matched']==204
+          assert (root/'roi_gene_targeted_q3.csv').is_file()
+          with (root/'roi_gene_targeted_q3.csv').open() as fh:
+              rows=list(csv.DictReader(fh))
+          assert len({r['gsm'] for r in rows})==204
+          assert all(r['gene'] and r['gsm'] for r in rows)
+          print('CACHED_SOURCE_VERIFIED', len(rows), 'targeted ROI-gene rows')
+          PY
+      - name: Compute within-site, within-compartment donor-level leave-one-out sensitivities
+        run: |
+          python -m py_compile projects/hs_spatial_gse294009/same_site_targeted_sensitivity.py
+          python projects/hs_spatial_gse294009/same_site_targeted_sensitivity.py --input output/hs_spatial_gse294009 --out output/hs_same_site_sensitivity
+      - name: Enforce non-inferential status and keyed expected analysis outputs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,csv
+          folder=Path('output/hs_same_site_sensitivity')
+          a=json.loads((folder/'HS_SENSITIVITY_AUDIT.json').read_text())
+          assert a['n_S2_GEO_HS_ROI']==132 and a['n_HS_donors']==15
+          assert a['S1_S2_HS12_conflicted_ROIs']==4
+          assert a['status']=='TARGETED_DESCRIPTIVE_GO_CONFIRMED_DE_HOLD'
+          with (folder/'HS_SAME_SITE_DONOR_PANEL.csv').open() as f:
+              rows=list(csv.DictReader(f))
+          primary=[x for x in rows if x['scenario']=='Yonsei_FFPE_exclude_HS12']
+          assert len(primary)==a['n_primary_comparisons']
+          assert all(x['inference']=='DESCRIPTIVE_ONLY_NO_PVALUES' for x in rows)
+          assert all(int(x['early_donors'])<=7 and int(x['late_donors'])<=3 for x in primary)
+          assert len(primary)>=3
+          print('PASS_FINAL_HS_EXPLORATORY_GATES',len(primary),'primary contrasts')
+          PY
+      - name: Publish targeted independent-donor descriptive evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-2026-132-roi-same-site-donor-sensitivity
+          path: output/hs_same_site_sensitivity/
+          retention-days: 45
+          if-no-files-found: warn

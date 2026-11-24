@@ -1,0 +1,59 @@
+name: HS original GeoMx methods equivalence and novelty gate
+# Computationally expensive, external-data workflows must be launched intentionally.
+# PRs run the lightweight research-static-checks workflow instead.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  methods-equivalence-and-jchain-claim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch verified original author PDF methods audit
+        uses: actions/download-artifact@v4
+        with:
+          name: hs-geomx-original-supplement-methods-provenance
+          run-id: 44908096673
+          github-token: ${{ github.token }}
+          path: output/hs_geomx_published_methods
+      - name: Fetch verified negative-probe original DCC/Q3/Q90 audit
+        uses: actions/download-artifact@v4
+        with:
+          name: hs-geomx-2026-loq-q3-q90-fast-qc
+          run-id: 44907538365
+          github-token: ${{ github.token }}
+          path: output/hs_loq_sensitivity
+      - name: Compare paper's standR RUV4 k=2 limma-voom with current exploratory counts
+        run: |
+          python -m py_compile projects/hs_spatial_gse294009/author_methods_equivalence_gate.py
+          python projects/hs_spatial_gse294009/author_methods_equivalence_gate.py --out output/hs_geomx_methods_equivalence
+      - name: Guard against false exact-replication and JCHAIN novelty claims
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/hs_geomx_methods_equivalence/HS_METHOD_EQUIVALENCE_DECISION.json')
+          r=json.loads(p.read_text())
+          assert all(r['source_pipeline_presence_verified'].values())
+          for key in ['matched_original_normalization','matched_original_batch_correction',
+                      'matched_original_DE_inference','verified_public_full_156_roi_quantification']:
+              assert r[key] is False,key
+          assert r['stage_specific_JCHAIN']=='HOLD_UNVERIFIED'
+          assert r['external_JCHAIN_HS_lesion_association']['novel_gene_biomarker_claim_allowed'] is False
+          assert r['scientific_decision']=='GO_FOR_RESEARCH_HYPOTHESIS_ONLY__HOLD_CLAIM_OF_PAPER_REPRODUCTION'
+          print('SOURCE_METHODS_EQUIVALENCE_HOLD_AND_NOVELTY_GATES_PASS')
+          PY
+      - name: Save paper-to-current methods comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-geomx-author-methods-equivalence-and-jchain-novelty
+          path: output/hs_geomx_methods_equivalence/
+          retention-days: 45
+          if-no-files-found: warn

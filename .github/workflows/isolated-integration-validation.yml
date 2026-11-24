@@ -1,0 +1,80 @@
+name: Isolated seven-PR integration validation
+on:
+  push:
+    branches:
+      - 'integration/validation-20261124'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: isolated-integration-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  deterministic-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install platform and YAML test dependencies
+        run: |
+          python -m pip install -r requirements.txt PyYAML==6.0.2
+          python -m pip check
+      - name: Verify exact seven-PR file snapshots and workflow YAML
+        run: |
+          python - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          import yaml
+          d=json.loads(Path('docs/review/integration-snapshot-20261124.json').read_text())
+          assert {p['pr'] for p in d['source_prs']} == set(range(21,28))
+          seen=set()
+          for p in d['source_prs']:
+              for f in p['files']:
+                  assert f['path'] not in seen, f
+                  seen.add(f['path'])
+                  line=subprocess.check_output(['git','ls-tree','HEAD','--',f['path']],text=True).strip()
+                  assert line == f["mode"]+" blob "+f["blob_sha"]+"\t"+f["path"], (f,line)
+          assert len(seen)==d['original_changed_files']
+          workflows=sorted(Path('.github/workflows').glob('*.yml'))
+          for path in workflows:
+              obj=yaml.load(path.read_text(),Loader=yaml.BaseLoader)
+              assert isinstance(obj,dict) and 'on' in obj and 'jobs' in obj,path
+          print('VERIFIED_PR_SNAPSHOT_FILES',len(seen),'WORKFLOW_YAML',len(workflows))
+          PY
+      - name: Compile platform, research and proposal Python source
+        run: python -m compileall -q src projects proposals
+      - name: Run deterministic platform and HS tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Run synthetic IPF clinical feasibility tests
+        run: python -m unittest discover -s proposals/ipf_clinical -p 'test_*.py' -v
+      - name: Validate collaboration proposal packet and tests
+        run: |
+          python proposals/2026-11/validate.py
+          python -m unittest discover -s proposals/2026-11/tests -v
+      - name: Verify archived model and QC hashes and replay independent QC
+        run: |
+          python - <<'PY'
+          import hashlib,json,subprocess,tempfile
+          from pathlib import Path
+          root=Path('docs/review/evidence')
+          manifest=json.loads((root/'hs_artifact_retention_20261124.json').read_text())
+          for a in manifest['source_files']:
+              for m in a['members']:
+                  if m.get('preserved_path'):
+                      data=Path(m['preserved_path']).read_bytes()
+                      assert len(data)==m['bytes'] and hashlib.sha256(data).hexdigest()==m['sha256'],m
+          with tempfile.TemporaryDirectory() as tmp:
+              subprocess.run(['python','projects/hs_spatial_gse294009/verify_full_refit_slide_artifact.py',
+                  '--input',str(root/'hs_full_refit_44927009405.json'),'--out',tmp],check=True)
+              actual=json.loads((Path(tmp)/'HS_FINAL_QC_GATE.json').read_text())
+              archived=json.loads((root/'hs_full_refit_45375886224.qc.json').read_text())
+              assert actual==archived,(actual,archived)
+          print('ARCHIVED_44_FIT_QC_REPLAY_MATCHES; NO_NEW_SCIENTIFIC_REPRODUCTION_CLAIM')
+          PY

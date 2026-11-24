@@ -1,0 +1,31 @@
+name: HS Spatial article supplementary donor mapping audit
+# Computationally expensive, external-data workflows must be launched intentionally.
+# PRs run the lightweight research-static-checks workflow instead.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-supplement-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax checks
+        run: |
+          python -m py_compile projects/hs_spatial_gse294009/paper_supp_linkage.py
+          python -m py_compile projects/hs_spatial_gse294009/hs_s1s2_site_stage_qc.py
+      - name: Retrieve official publication supplementary XLSX and provenance
+        run: python projects/hs_spatial_gse294009/paper_supp_linkage.py --out output/hs_spatial_supp
+      - name: Verify published GSM accessions and stage/site sensitivity
+        run: python projects/hs_spatial_gse294009/hs_s1s2_site_stage_qc.py
+      - name: Publish bounded public evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hs-spatial-publication-supplement-linkage
+          path: output/hs_spatial_supp/
+          retention-days: 30

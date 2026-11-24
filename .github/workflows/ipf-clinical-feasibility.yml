@@ -1,0 +1,21 @@
+name: IPF clinical biomarker feasibility logic (synthetic only)
+on:
+  pull_request:
+    paths:
+      - 'proposals/ipf_clinical/**'
+      - '.github/workflows/ipf-clinical-feasibility.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate-protocol-and-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate code syntax
+        run: python -m compileall -q proposals/ipf_clinical
+      - name: Run synthetic tests, no patient data
+        run: python -m unittest discover -s proposals/ipf_clinical -p 'test_*.py' -v

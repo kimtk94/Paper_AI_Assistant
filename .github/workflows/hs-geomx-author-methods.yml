@@ -1,0 +1,54 @@
+name: HS original GeoMx supplementary methods provenance
+# Computationally expensive, external-data workflows must be launched intentionally.
+# PRs run the lightweight research-static-checks workflow instead.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pdf-methods-source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PDF text extraction dependency
+        run: python -m pip install --quiet pypdf==6.6.0
+      - name: Check source audit syntax
+        run: python -m py_compile projects/hs_spatial_gse294009/original_supplement_methods_audit.py
+      - name: Retrieve and page-index original supplemental PDF from official source
+        run: python projects/hs_spatial_gse294009/original_supplement_methods_audit.py --out output/hs_geomx_published_methods
+      - name: Inspect original source method excerpts with page provenance
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/hs_geomx_published_methods/ORIGINAL_METHODS_AUDIT.json').read_text())
+          assert r['source_file']=='NIHMS2203138-supplement-1.pdf'
+          assert r['pdf_pages']>=1 and len(r['pdf_sha256'])==64
+          assert r['state']=='ORIGINAL_SUPPLEMENT_PDF_RETRIEVED_REQUIRES_METHOD_REVIEW'
+          print('SOURCE_PDF_SHA256',r['pdf_sha256'])
+          print('SOURCE_PAGES',r['pdf_pages'])
+          for section in ['LOQ and negative controls','probe quality control','normalization','batch and site','differential expression','ROI quality']:
+              hits=r['method_contexts'][section]
+              print('METHOD_CATEGORY',section,'COUNT',len(hits))
+              for item in hits[:8]:
+                  print('PAGE',item['source_page'],'TEXT',item['context'][:350])
+          for label,anchors in r.get('author_pipeline_anchor_context',{}).items():
+              print('PIPELINE_ANCHOR',label,'MATCHES',len(anchors))
+              for anchor in anchors[:3]:
+                  print('PDF_PAGE',anchor['page'],'EXACT_CONTEXT',anchor['text'][:900])
+          print('METHODS_SOURCE_REVIEW_REQUIRED')
+          PY
+      - name: Upload bounded audit metadata only, without source PDF or full article text
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-geomx-original-supplement-methods-provenance
+          path: |
+            output/hs_geomx_published_methods/ORIGINAL_METHODS_AUDIT.json
+            output/hs_geomx_published_methods/ORIGINAL_METHODS_REPORT.md
+          retention-days: 30
+          if-no-files-found: warn

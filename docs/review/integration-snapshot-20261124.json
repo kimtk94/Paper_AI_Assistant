@@ -1,0 +1,662 @@
+{
+  "purpose": "Isolated integration verification; not a release or merge into main.",
+  "base_main_sha": "54d0c83ab3e421c6112f251756f8226949c5e84d",
+  "source_prs": [
+    {
+      "pr": 27,
+      "head_sha": "15102913047bcb58d4ee838caf370e6627b56ecd",
+      "branch": "review/reliability-followup-20261124",
+      "files": [
+        {
+          "path": ".github/workflows/skku-pubmed-ci.yml",
+          "blob_sha": "53f6cee98a254ea1f00c3f436c535f91d0e8671a",
+          "mode": "100644"
+        },
+        {
+          "path": ".gitignore",
+          "blob_sha": "1d44662c35c4ae46511b9bb738feb1e45a2afe77",
+          "mode": "100644"
+        },
+        {
+          "path": "MULTIOMICS_OPERATIONS.md",
+          "blob_sha": "718c53c9927e2e732035b1d05caa2047d8193a98",
+          "mode": "100644"
+        },
+        {
+          "path": "PAPER_AI_ASSISTANT_SPEC.md",
+          "blob_sha": "3096ce75c5289dcd797e7be27e0c411c844fa39f",
+          "mode": "100644"
+        },
+        {
+          "path": "README.md",
+          "blob_sha": "360e78128291f2b807bcca4e0c6d77dc36624df3",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/review/2026-11-24.md",
+          "blob_sha": "59e79d9283fcdf38e5383bf35af97e7deca3a5bd",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/review/evidence/hs_artifact_retention_20261124.json",
+          "blob_sha": "935bb9f2e724dec709b9c966b3c68b329a2bc12b",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/review/evidence/hs_full_refit_44927009405.json",
+          "blob_sha": "c414bf7b8fab50474bc507a2ed403317e2ebf360",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/review/evidence/hs_full_refit_44927009405.provenance.json",
+          "blob_sha": "d3d618555736cb86cfcd46d367aae29d4ade96e0",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/review/evidence/hs_full_refit_45375886224.qc.json",
+          "blob_sha": "e63b443ad2e8583642ddec61ac3f79597424280e",
+          "mode": "100644"
+        },
+        {
+          "path": "requirements.txt",
+          "blob_sha": "cae1a6cb1f5b89e40e1ae12f262d58339d55e4a8",
+          "mode": "100644"
+        },
+        {
+          "path": "src/multiomics_ingest.py",
+          "blob_sha": "e67632b1f27c7ebe10f7029ca3651a044d98ab96",
+          "mode": "100644"
+        },
+        {
+          "path": "src/paper_assistants.py",
+          "blob_sha": "cf012567528a3afda3af5f0786b87f460d106b28",
+          "mode": "100644"
+        },
+        {
+          "path": "src/pdf_disease_year_organizer.py",
+          "blob_sha": "8bdc9160d40806f84b9ae0398ebee3190da1aeec",
+          "mode": "100644"
+        },
+        {
+          "path": "src/skku_pubmed_lineage.py",
+          "blob_sha": "166610fe633462e0e46fb0d4802edd7bcdc293b1",
+          "mode": "100644"
+        },
+        {
+          "path": "tests/test_multiomics_ingest.py",
+          "blob_sha": "626dc5f50c11af81df0d3923067d8d06367fe900",
+          "mode": "100644"
+        },
+        {
+          "path": "tests/test_paper_assistants.py",
+          "blob_sha": "f5ccd60f0bfa13c94f84ef1b13f41914547a8d82",
+          "mode": "100644"
+        },
+        {
+          "path": "tests/test_pdf_disease_year_organizer.py",
+          "blob_sha": "9abede38da51ab4c19cadc2ae1d803ca72cf2d41",
+          "mode": "100644"
+        },
+        {
+          "path": "tests/test_skku_pubmed_transport.py",
+          "blob_sha": "31a669f07b3029e2b2d8bbbd7eac31cec5f72456",
+          "mode": "100644"
+        }
+      ]
+    },
+    {
+      "pr": 21,
+      "head_sha": "f130a877669d5dd688caab461dfe2e078ccab32f",
+      "branch": "research/endometriosis-gse283755-20261121",
+      "files": [
+        {
+          "path": ".github/workflows/endometriosis-geo-audit.yml",
+          "blob_sha": "34a692a05f83eee9d79f429eb98417eb34ead1d6",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/endometriosis-loo-supplement.yml",
+          "blob_sha": "c001b8d1aed837e2b08d0abf16c74bf3aa08dee6",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/endometriosis_gse283755/README.md",
+          "blob_sha": "58274910327ae2672fece6fdeea1fe8b2c228b90",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/endometriosis_gse283755/deseq2.R",
+          "blob_sha": "910e0eb518baea2f1c8ce7832531a0c7e9294707",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/endometriosis_gse283755/requirements.txt",
+          "blob_sha": "0e07b97180a9e5cf411c9f3633be8258860c3ad1",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/endometriosis_gse283755/run.py",
+          "blob_sha": "910915afe55fe5af3907572b941f6b0729d100ef",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/endometriosis_gse283755_validation/check_supplement.py",
+          "blob_sha": "4a798122f2200bbd66426a417ea2983c43f4bcf3",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/endometriosis_gse283755_validation/loo_deseq2.R",
+          "blob_sha": "2b73dc0907bb6310acbbf5705f61a958e45e5435",
+          "mode": "100644"
+        }
+      ]
+    },
+    {
+      "pr": 22,
+      "head_sha": "bf633ffa7ec5bcc2ae8be9c5878261924d8ebfcd",
+      "branch": "research/migraine-metabolomics-mtbls13630-20261121",
+      "files": [
+        {
+          "path": ".github/workflows/migraine-mtbls13630-audit.yml",
+          "blob_sha": "a2c09782fd956da809ccf589bc32dba26cb6fd12",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/migraine_mtbls13630/README.md",
+          "blob_sha": "741054ff45e3825a99812b2f9862ba0c5619d18c",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/migraine_mtbls13630/audit.py",
+          "blob_sha": "3cdc8d1e5bfa88c11f0beb62f357ef3d1adbbd00",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/migraine_mtbls13630/resolve_quant.py",
+          "blob_sha": "4bcdcfd786993a9baccfe26f4b2970f71a3b1d8c",
+          "mode": "100644"
+        }
+      ]
+    },
+    {
+      "pr": 23,
+      "head_sha": "5e23a1c1a9f5c8ed0e8e4049897f5a17dba3027d",
+      "branch": "research/ipf-pxd010965-feasibility-20261121",
+      "files": [
+        {
+          "path": ".github/workflows/ipf-gse135893-cell-origin.yml",
+          "blob_sha": "bd4dcf5c20b8879ef381e57072a019269f1161d6",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/ipf-gse135893-source-audit.yml",
+          "blob_sha": "498f97ea831b138daf0c21479b7e8b82af3385cc",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/ipf-gse136831-meta-audit.yml",
+          "blob_sha": "4afab5ebbcd954032a5142f8523ade06b807293c",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/ipf-gse136831-targeted.yml",
+          "blob_sha": "d9ea4739dde02e725921ee765112cdd9ecb5fc84",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/ipf-pxd010965-audit.yml",
+          "blob_sha": "4796e82cd0b83bdb448373fff2f257fc24510fde",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/ipf_gse136831_validation/targeted_independent.py",
+          "blob_sha": "9609689968735d59dee412a503922136cd92662c",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/ipf_pxd010965/analyze_proteins.py",
+          "blob_sha": "47ce0b970791ba8f021cfc3a33791c8501de9dbc",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/ipf_pxd010965/audit.py",
+          "blob_sha": "043109bc3acef99f695c92c67e9b457ccc12e1fd",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/ipf_pxd010965/gse135893_metadata.py",
+          "blob_sha": "98118ca0e04dabf0a4d21656eac8d7560b870ecf",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/ipf_pxd010965/gse135893_targeted.py",
+          "blob_sha": "d17cc02a8a9e9f82879271ef3e37c71fe340d706",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/ipf_pxd010965/gse136831_metadata.py",
+          "blob_sha": "7b99b83bb906f81554d5b81c3bf17b322cc928e9",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/ipf_pxd010965/inspect_quant.py",
+          "blob_sha": "503780f7a5006cac5c3c9334abe6afb09406ceca",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/ipf_pxd010965/source_batch_audit.py",
+          "blob_sha": "1366fd023ce276b77d2207fdbd1678dde92cbf85",
+          "mode": "100644"
+        }
+      ]
+    },
+    {
+      "pr": 24,
+      "head_sha": "c341058bcebee7f73e4e2edfe02b88ecdeb09d02",
+      "branch": "research/ipf-clinical-feasibility-20261121",
+      "files": [
+        {
+          "path": ".github/workflows/ipf-clinical-feasibility.yml",
+          "blob_sha": "3486e7cd90dd93a0c865a0af130eab31deba5136",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/ipf_clinical/README.md",
+          "blob_sha": "7aab31ee9ef56c391d6e4ce8aa240c2f93c29488",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/ipf_clinical/RESEARCH_PROTOCOL.md",
+          "blob_sha": "7ef267b083c45d55c05a79308750770c40ba17f3",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/ipf_clinical/feasibility.py",
+          "blob_sha": "dc801ee379e605d2e46fec7ce09a7bb5989e9661",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/ipf_clinical/test_feasibility.py",
+          "blob_sha": "0d6c97055c49e5d11f92e4fb97928badffd6c5fc",
+          "mode": "100644"
+        }
+      ]
+    },
+    {
+      "pr": 25,
+      "head_sha": "0d1c857afcf2aa5390cc428468463bffa2be901e",
+      "branch": "research/novogene-top7-remaining4-20261121",
+      "files": [
+        {
+          "path": ".github/workflows/hs-2023-historic24-source-audit.yml",
+          "blob_sha": "6f86373801bd1d726802824feb6d17931a840252",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-clinical-balance.yml",
+          "blob_sha": "bf5cbb6fa103261532a397dd738c3f497c612cb2",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-geomx-author-equivalence-gate.yml",
+          "blob_sha": "b10a6a7922a98321c5449a99e71856b7f0d8b0d0",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-geomx-author-methods.yml",
+          "blob_sha": "eb9e98f11e0098ea601b4336bbed9dc41619d793",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-geomx-final-donor-slide-audit.yml",
+          "blob_sha": "62abe0a71ffcc14cef9c055d4cd76ba564b2ce2c",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-geomx-full-wta-132.yml",
+          "blob_sha": "aef267eca6a0162374d0265e94dcc6a905b135ab",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-geomx-loq-fast.yml",
+          "blob_sha": "48e6dc47e60616fcbb1266d86ddaa429f6ec6d3f",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-geomx-standr-design-preflight.yml",
+          "blob_sha": "33ea67e4473631412be7d9d5378110ff10c72bd0",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-geomx-standr-ruv4-pilot.yml",
+          "blob_sha": "41b0df911d82c27ed32c2d4a3057b7e750a9ec1e",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-response-followup.yml",
+          "blob_sha": "c5f9d85022ff528ff0f3c68b09f73429a3c513d7",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-spatial-gse294009-probe.yml",
+          "blob_sha": "44f34d37976697b108278e9b39431d2cd350922b",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-spatial-same-site-sensitivity.yml",
+          "blob_sha": "67da057b5c1ace22d7ecda77b95373ad1554fd5a",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-spatial-source-rows-fast.yml",
+          "blob_sha": "61a8970f65643036fa9eca96c237d84f37f34f6a",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/hs-spatial-supplement-linkage.yml",
+          "blob_sha": "9e83bc5b21527a9d5c8bdafa68d04a8506f001c7",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/novogene-top7-remaining4-audit.yml",
+          "blob_sha": "f92845acbfa75989736151f31c057acae3417e6b",
+          "mode": "100644"
+        },
+        {
+          "path": ".github/workflows/research-static-checks.yml",
+          "blob_sha": "3ad70ae7384e1af6b6cafbff47c564f2582edf0f",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/research/hs_geomx_author_methods_jchain_novelty_20261121.md",
+          "blob_sha": "57285fb977237dc6a7ecf4f30e9bae34287ff2d9",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/research/hs_geomx_full_refit_slide_44models_verified_20261122.md",
+          "blob_sha": "b2ff14546ce4930d02df954c54c5ff61919c114b",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/research/hs_geomx_full_wta_standr_design_feasibility_20261121.md",
+          "blob_sha": "39eb73070c42e0d9d958d2897ebcbffeb4418f16",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/research/hs_geomx_jchain_conditional_loo_verified_20261122.md",
+          "blob_sha": "b2848f2b07a581670e2ea7de73896e8dbd0d918e",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/research/hs_geomx_negative_probe_loq_q3_q90_qc_20261121.md",
+          "blob_sha": "ee39a262740d265b6359eeb7926f02c3bd66fb49",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/research/hs_geomx_standr_ruv4_model_verified_20261122.md",
+          "blob_sha": "a60f7fef6f896d846eca19b686aba01112372be2",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/research/hs_spatial_132roi_same_site_sensitivity_20261121.md",
+          "blob_sha": "90bf71c0f68c1bf920692913a0153b2938329fc6",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/review/2026-11-24-hs-historic24-source-request-and-intake.md",
+          "blob_sha": "1d20505c0a63b54cbb0f047207c907c68b0ed09c",
+          "mode": "100644"
+        },
+        {
+          "path": "docs/review/2026-11-24-hs-source-and-model-gates.md",
+          "blob_sha": "c62888fabc991fc7aa3f6da9ac7fae1bf5b7a8af",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_followup/clinical_covariate_qc.py",
+          "blob_sha": "b0263334c45a8cc2d585e5618aa20dfb2f110647",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_followup/paired_delta_permutation.py",
+          "blob_sha": "dc36315b9b3e48d240f59a052ee8e3c7e496a201",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_followup/response_interaction.R",
+          "blob_sha": "56cb6a46ce3fcd7c07f9781cb983222b51e003a9",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/author_methods_equivalence_gate.py",
+          "blob_sha": "cd898164265e6234e9db6b4ab2ca20b618530e11",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/author_s2_donor_sensitivity.py",
+          "blob_sha": "d7b96ec5890994b1998846c07b1dda65cf38ede1",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/author_s2_geo_crosswalk.csv",
+          "blob_sha": "7dfdd7c60edd43d240e919a67b5be3f845cf53c0",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/build_full_wta_132.py",
+          "blob_sha": "77f372c1ae4fb1ac31a5a477b31589b4ca1654fe",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/dcc_probe.py",
+          "blob_sha": "1cf90e2a8c00ebabdbd8b58d43e2bb2af3bb9827",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/full_refit_slide_loo.R",
+          "blob_sha": "367acbeb0dd0cbaf5cb72e22b3345643cd420f1b",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/geo_file_probe.py",
+          "blob_sha": "e5dabd88faa509aa86b38ff5ba810ab99ea93848",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/historic24_public_source_audit.py",
+          "blob_sha": "b49bd0c92f75570597aca1ce058d9fcffcdc69be",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/historic24_quant_candidate_gate.py",
+          "blob_sha": "6fdb5c9f5f480f9e8d8bdca83ba3620a02a5fb71",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/hs_s1s2_site_stage_qc.py",
+          "blob_sha": "0cfb89520d2dcb1c3890485ca26cb4cd2f931a93",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/loq_q3_robustness.py",
+          "blob_sha": "74ae638dd56110f9aee18dcc7ab3483ebb224b07",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/original_supplement_methods_audit.py",
+          "blob_sha": "72f6b54937ba4cf130ac87e45337a11127a1e540",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/paper_supp_linkage.py",
+          "blob_sha": "5efb8fa2e8cfd9e4f2dbb606f12e4405629a38c2",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/reconstruct_roi_counts.py",
+          "blob_sha": "c68a7c82022b6b5212474deb2afa4e22912677ce",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/run_standr_ruv4_feasibility.R",
+          "blob_sha": "b2acc14edcf54f9f232f3ae3408a37d7ecac3f99",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/same_site_targeted_sensitivity.py",
+          "blob_sha": "2e9af9321ae28810e4eaf0558f50175d18f6db4e",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/source_sensitivity.py",
+          "blob_sha": "32c36982dd1f5a39398fff913b80fb4e4ca01805",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/standr_design_preflight.py",
+          "blob_sha": "7281fe1287563493926f87d2a574722b968d60f6",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/hs_spatial_gse294009/verify_full_refit_slide_artifact.py",
+          "blob_sha": "cc89bc63f1afa30f17dbdb396ce802e9c5399983",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/top7_remaining4/geo_baseline.py",
+          "blob_sha": "ceada1b98860f8f30dc1f12b539c22d4d1d7eafa",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/top7_remaining4/hs_paired_deseq2.R",
+          "blob_sha": "8056e9152d162a8e1cf342c0ed2271285c8748e9",
+          "mode": "100644"
+        },
+        {
+          "path": "projects/top7_remaining4/refine.py",
+          "blob_sha": "30258b684d013d02dcabf663a7ff743f3d36982d",
+          "mode": "100644"
+        },
+        {
+          "path": "tests/test_hs_historic24_quant_gate.py",
+          "blob_sha": "9cfa2a030f75803cf9d9e7dbe36a7d258729f46a",
+          "mode": "100644"
+        },
+        {
+          "path": "tests/test_hs_s2_mapping.py",
+          "blob_sha": "5faaa110fa97b5e77911b37492e3f9ef47e52c25",
+          "mode": "100644"
+        },
+        {
+          "path": "tests/test_hs_supplement_archive.py",
+          "blob_sha": "a0e720d5e24d59b66a2551fe7ec187f86693e591",
+          "mode": "100644"
+        }
+      ]
+    },
+    {
+      "pr": 26,
+      "head_sha": "e41689e0ae5c5e602bd04c52b842aaa3c68fb590",
+      "branch": "docs/sales-proposals-20261124",
+      "files": [
+        {
+          "path": ".github/workflows/proposal-packet.yml",
+          "blob_sha": "1ac60dd87f1c7f894884ec56b42112e95f58d1a3",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/01_ipf.md",
+          "blob_sha": "250c592e474cf2af8be95878a7bc72c088c3b133",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/02_hs.md",
+          "blob_sha": "4c2bd98e27a36d5ca14cc010bae30937afe4540a",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/03_endometriosis.md",
+          "blob_sha": "7357ca2d9c8d77626ce4021ee5ee69b2746a4f96",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/04_migraine.md",
+          "blob_sha": "19d13821ac9ccd8f9d62841ee1501f47cda421d9",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/05_nmosd.md",
+          "blob_sha": "ce82e8c684c3aaa71b7e7371e172dabb4df65060",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/06_musk_mg.md",
+          "blob_sha": "5a37cf6b5d8d8962cd6fd9227da81513f9205bbb",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/README.md",
+          "blob_sha": "32a1f461c654c3e3549f4fef5afc07849e40267f",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/REFERENCES.md",
+          "blob_sha": "818f7cedb48e175eaa6e099a52b1dac5d1d2c60f",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/build_pdfs.py",
+          "blob_sha": "80d10dfa535277583f159efef034b7c01a8e3e64",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/emails/01_ipf.md",
+          "blob_sha": "823f8d31fd62085ba68db0f447dbe59167ed7c95",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/emails/02_hs.md",
+          "blob_sha": "c064a162a4fffcacf0339ce17b55a445ac963530",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/emails/03_endometriosis.md",
+          "blob_sha": "9b68c454e601de31e0140436faed500bcc2faead",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/emails/04_migraine.md",
+          "blob_sha": "b4d37460f1eab8f3099475ac2788e84c8b51b153",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/emails/05_nmosd.md",
+          "blob_sha": "f5b5a2d39ccec00983417af68c12bcae1cfc1d80",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/emails/06_musk_mg.md",
+          "blob_sha": "693353545ad2785deea1ac02fdf473d0973415f1",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/manifest.json",
+          "blob_sha": "2909a13de141e524bce48736adc379dfe82edd74",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/tests/test_packet.py",
+          "blob_sha": "87dc69a1ff5c37303a6f801ab944bf6718c66e15",
+          "mode": "100644"
+        },
+        {
+          "path": "proposals/2026-11/validate.py",
+          "blob_sha": "e3f9634f037f4ca3a69a7203e2d8c82121a01ee2",
+          "mode": "100644"
+        }
+      ]
+    }
+  ],
+  "original_changed_files": 121,
+  "validation_scope": "Python compilation, deterministic root unit tests, clinical synthetic tests, proposal validation, evidence hash and model QC replay, YAML and source-blob integrity. No external research retrieval, R analysis, or clinical data."
+}

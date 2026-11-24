@@ -1,0 +1,57 @@
+name: Endometriosis GSE283755 LOO and original supplement audit
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'projects/endometriosis_gse283755_validation/**'
+      - '.github/workflows/endometriosis-loo-supplement.yml'
+permissions:
+  contents: read
+jobs:
+  source-article-supplement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download official published Table 2 and inspect text structure
+        run: python projects/endometriosis_gse283755_validation/check_supplement.py --out output/endometriosis_supplement
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gse283755-official-deg-supplement
+          path: output/endometriosis_supplement/
+          retention-days: 30
+  patient-leave-one-out:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install GEO data reader dependencies
+        run: pip install pandas==2.3.3 numpy==2.3.5 openpyxl==3.1.5 scipy==1.17.1 statsmodels==0.14.5
+      - name: Download GEO expression and infer 8 public counts
+        run: python projects/endometriosis_gse283755/run.py --output output/endo_loo
+      - name: Install DESeq2
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y r-bioc-deseq2
+      - name: Calculate baseline 406 DEG comparison and patient LOO
+        run: |
+          Rscript projects/endometriosis_gse283755/deseq2.R output/endo_loo/raw_counts_by_gene_symbol.csv output/endo_loo
+          Rscript projects/endometriosis_gse283755_validation/loo_deseq2.R output/endo_loo/raw_counts_by_gene_symbol.csv output/endo_loo
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gse283755-deseq2-leaveoneout
+          path: |
+            output/endo_loo/LOO_REPORT.md
+            output/endo_loo/loo_*.csv
+            output/endo_loo/LOO_DEG_*.csv
+            output/endo_loo/deseq2_author_filter_gene_results.csv
+            output/endo_loo/deseq2_author_filter_summary.csv
+          retention-days: 30

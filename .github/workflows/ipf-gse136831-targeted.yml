@@ -1,0 +1,28 @@
+name: IPF GSE136831 independent donor-aware gene validation
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'projects/ipf_gse136831_validation/**'
+      - '.github/workflows/ipf-gse136831-targeted.yml'
+permissions:
+  contents: read
+jobs:
+  donor-aware-targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax self-check
+        run: python -m py_compile projects/ipf_gse136831_validation/targeted_independent.py
+      - name: Stream public GSE136831 count MTX and analyze six candidates
+        run: python projects/ipf_gse136831_validation/targeted_independent.py --out output/ipf_gse136831_targeted
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gse136831-external-donor-targets
+          path: output/ipf_gse136831_targeted/
+          retention-days: 30

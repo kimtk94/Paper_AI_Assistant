@@ -1,0 +1,150 @@
+name: HS standR RUV4 k2 donor-blocked voom 132 ROI feasibility
+# Computationally expensive, external-data workflows must be launched intentionally.
+# PRs run the lightweight research-static-checks workflow instead.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  ruv4-pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.2'
+          use-public-rspm: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore checksum-verified 18,676 gene x 132 HS ROI raw counts
+        uses: actions/download-artifact@v4
+        with:
+          name: hs-2026-132-full-wta-source-counts
+          run-id: 44909141520
+          github-token: ${{ github.token }}
+          path: output/hs_spatial_full_matrix
+      - name: Restore verified independent donor and slide-rank gate
+        uses: actions/download-artifact@v4
+        with:
+          name: hs-132-stanDR-donor-rank-preflight
+          run-id: 44909306514
+          github-token: ${{ github.token }}
+          path: output/hs_standr_design_preflight
+      - name: Install Ubuntu development and run-time libraries required by Rhtslib and magick
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libcurl4-openssl-dev libmagick++-dev imagemagick libssl-dev libxml2-dev libpng-dev libjpeg-dev libtiff-dev libgit2-dev libicu-dev libfontconfig1-dev libfreetype6-dev libharfbuzz-dev libfribidi-dev libbz2-dev liblzma-dev zlib1g-dev libx11-dev libgsl-dev
+          pkg-config --modversion libcurl
+          pkg-config --modversion Magick++
+      - name: Install standR and donor-blocked limma-voom runtime
+        run: |
+          Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org")'
+          Rscript -e 'BiocManager::install(c("standR","edgeR","limma","SpatialExperiment","SummarizedExperiment","S4Vectors","statmod","jsonlite"), ask=FALSE, update=FALSE, quiet=TRUE, Ncpus=3)'
+          Rscript -e 'stopifnot(all(vapply(c("standR","edgeR","limma","SpatialExperiment","SummarizedExperiment","S4Vectors","statmod","jsonlite"), requireNamespace, logical(1), quietly=TRUE)));cat("STANDR_ENVIRONMENT_PASS",as.character(packageVersion("standR"))," R",as.character(getRversion()),"\n")'
+      - name: Parse R analysis and inspect input checksums
+        run: |
+          Rscript -e 'parse(file="projects/hs_spatial_gse294009/run_standr_ruv4_feasibility.R");cat("R_PARSER_PASS\n")'
+          python - <<'PY'
+          import csv,gzip,hashlib,json
+          from pathlib import Path
+          p=Path('output/hs_spatial_full_matrix')
+          a=json.loads((p/'HS_132_FULL_WTA_SOURCE_AUDIT.json').read_text())
+          assert hashlib.sha256((p/'HS_132_HS_GENE_WTA_COUNTS.csv.gz').read_bytes()).hexdigest()==a['matrix_csv_gz_sha256']
+          assert (a['endogenous_gene_rows'],a['included_S2_GEO_HS_ROI'])==(18676,132)
+          with gzip.open(p/'HS_132_HS_GENE_WTA_COUNTS.csv.gz','rt') as f:assert len(next(csv.reader(f)))==133
+          print('RUV4_FULL_COUNTS_SOURCE_PASS')
+          PY
+      - name: Execute standR TMM/upperquartile RUV4(k2) and donor-blocked voom
+        run: |
+          Rscript projects/hs_spatial_gse294009/run_standr_ruv4_feasibility.R output/hs_spatial_full_matrix output/hs_standr_design_preflight output/hs_standr_ruv4
+      - name: Reject false 156-ROI or author-FDR reproduction claims
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('output/hs_standr_ruv4/HS_STANDR_RUV4_VOOM_FEASIBILITY.json')
+          a=json.loads(p.read_text())
+          assert a['status']=='TWO_NORMALIZATION_ROBUST_FEASIBILITY_COMPLETED__NOT_PAPER_REPLICATION'
+          assert not a['complete_156_author_FDR_reproduction']
+          assert not a['confirmatory_stage_biomarker']
+          for method in ['TMM','upperquartile']:
+              x=a['results'][method]
+              assert x['n_Yonsei_FFPE_HS_ROI']==82
+              assert x['n_deep_dermis_ROI']==24
+              assert (x['n_deep_Early_donors'],x['n_deep_Late_donors'])==(7,3)
+              assert x['n_RUV_factors']==2
+              assert x['full_design_rank']==x['full_design_ncol']
+              loo=x['JCHAIN_conditional_LOO']
+              assert loo['n_withheld_independent_donors']==10
+              assert len(loo['withheld_donor_results'])==10
+              assert 0<=loo['n_model_success']<=10
+              assert isinstance(loo['all_valid_and_same_sign'],bool)
+              assert all(y['status'] in ('PASS','HOLD_LT2_DONORS','HOLD_MODEL_ERROR') for y in loo['withheld_donor_results'])
+              print('JCHAIN_CONDITIONAL_DONOR_LOO',method,loo['n_model_success'],
+                    'out_of_10',loo['all_valid_and_same_sign'],'range',loo['effect_range'])
+              assert not x['author_equivalent'] and not x['early_late_de_confirmed']
+          print('STANDR_RUV4_2_NORMALIZATION_METHODS_MODEL_FIT_PASS_NO_PUBLICATION_CLAIM')
+          PY
+      - name: Fully re-estimate standR RUV4 k2 for every withheld donor; test explicit slide model
+        run: |
+          Rscript -e 'invisible(parse(file="projects/hs_spatial_gse294009/full_refit_slide_loo.R"));cat("FULL_REFIT_R_SYNTAX_PASS\\n")'
+          Rscript projects/hs_spatial_gse294009/full_refit_slide_loo.R output/hs_spatial_full_matrix output/hs_standr_design_preflight output/hs_standr_full_refit
+      - name: Verify all source/model gates without cherry-picking stage effect
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('output/hs_standr_full_refit/HS_FULL_REFIT_SLIDE_DONOR_LOO_AUDIT.json')
+          a=json.loads(p.read_text())
+          assert a['status']=='FULL_NUISANCE_REESTIMATED_DONOR_LOO_AND_SLIDE_DESIGN_AUDIT__NOT_PAPER_REPLICATION'
+          assert (a['n_source_HS_roi'],a['n_primary_HS_roi'],a['n_primary_donors'])==(132,82,10)
+          assert a['n_primary_deep_roi']==24
+          assert not a['original_156_ROI_reproduced'] and not a['confirmed_DE_biomarker']
+          assert a['full_reestimation_per_heldout_donor'] and a['slide_fixed_effect_explicitly_tested']
+          assert len(a['summaries'])==4
+          for norm in ['TMM','upperquartile']:
+              entries=a['results'][norm]
+              assert len(entries)==22
+              for mode in ['Stage_RUV','Stage_Slide_RUV']:
+                  summary=a['summaries'][norm+'__'+mode]
+                  assert summary['n_donors_loo']==10
+                  assert 0<=summary['n_successful_refits']<=10
+                  assert summary['n_HOLD']+summary['n_successful_refits']==10
+                  print('SCIENTIFIC_REFIT_GATES',norm,mode,
+                        summary['base_status'],summary['n_successful_refits'],
+                        summary['all_success_and_same_direction'],summary['loo_effect_range'])
+              for result in entries.values():
+                  assert result['full_nuisance_reestimation'] is True
+                  assert result['status'] in ('PASS_MODEL_FIT','HOLD_MODEL_ERROR','HOLD_RUV_ERROR')
+          print('SOURCE_AND_MODEL_ACCOUNTABILITY_PASS: no significance claim')
+          PY
+      - name: Fail closed unless all 44 model fits pass the independent donor-wise QC gate
+        run: |
+          python projects/hs_spatial_gse294009/verify_full_refit_slide_artifact.py --input output/hs_standr_full_refit/HS_FULL_REFIT_SLIDE_DONOR_LOO_AUDIT.json --out output/hs_standr_full_refit_validation
+      - name: Preserve producer-side independent QC decision
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-132-full-nuisance-producer-QC-decision
+          path: output/hs_standr_full_refit_validation/
+          retention-days: 45
+          if-no-files-found: warn
+      - name: Preserve separate donor-wise nuisance-reestimated model sensitivity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-132-full-nuisance-LOO-and-slide-sensitivity
+          path: output/hs_standr_full_refit/
+          retention-days: 45
+          if-no-files-found: warn
+      - name: Preserve bounded exploratory model diagnostics and source provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-132-stanDR-RUV4-k2-donor-blocked-voom-pilot
+          path: output/hs_standr_ruv4/
+          retention-days: 45
+          if-no-files-found: warn
