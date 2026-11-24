@@ -1,10 +1,7 @@
 name: HS GeoMx fast LOQ Q3 Q90 patient-aware QC
+# Computationally expensive, external-data workflows must be launched intentionally.
+# PRs run the lightweight research-static-checks workflow instead.
 on:
-  pull_request:
-    paths:
-      - 'projects/hs_spatial_gse294009/loq_q3_robustness.py'
-      - 'projects/hs_spatial_gse294009/author_s2_geo_crosswalk.csv'
-      - '.github/workflows/hs-geomx-loq-fast.yml'
   workflow_dispatch:
 permissions:
   contents: read

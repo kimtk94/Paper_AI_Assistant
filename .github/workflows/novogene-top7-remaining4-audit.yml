@@ -1,9 +1,7 @@
 name: Novogene Top 7 remaining four public data baseline
+# Computationally expensive, external-data workflows must be launched intentionally.
+# PRs run the lightweight research-static-checks workflow instead.
 on:
-  pull_request:
-    paths:
-      - 'projects/top7_remaining4/**'
-      - '.github/workflows/novogene-top7-remaining4-audit.yml'
   workflow_dispatch:
 jobs:
   public-dataset-audit:

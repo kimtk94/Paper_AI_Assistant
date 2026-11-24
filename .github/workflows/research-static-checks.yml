@@ -1,0 +1,44 @@
+name: Research static safety checks (no downloads)
+on:
+  pull_request:
+    paths:
+      - 'projects/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install YAML parser (no research datasets)
+        run: python -m pip install --quiet PyYAML==6.0.2
+      - name: Compile Python source without execution or network access
+        run: python -m compileall -q projects
+      - name: Verify YAML triggers and research fail-closed guards
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          workflows = Path('.github/workflows')
+          heavy = sorted(p for p in workflows.glob('*.yml')
+                         if p.name.startswith('hs-') or p.name == 'novogene-top7-remaining4-audit.yml')
+          assert len(heavy) == 14, f'Unexpected research workflow count: {len(heavy)}'
+          for path in heavy:
+              doc = yaml.load(path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+              assert isinstance(doc, dict) and 'jobs' in doc, path
+              trigger = doc.get('on', {})
+              assert set(trigger) == {'workflow_dispatch'}, (path, trigger)
+          final = yaml.load((workflows/'hs-geomx-final-donor-slide-audit.yml').read_text(), Loader=yaml.BaseLoader)
+          assert set(final['on']) == {'workflow_dispatch'}
+          pilot = (workflows/'hs-geomx-standr-ruv4-pilot.yml').read_text()
+          assert 'verify_full_refit_slide_artifact.py --input output/hs_standr_full_refit/' in pilot
+          assert 'if: always()' in pilot
+          assert 'producer_commit_sha' in (workflows/'hs-geomx-final-donor-slide-audit.yml').read_text()
+          print('RESEARCH_STATIC_PASS',len(heavy),'expensive workflows on-demand; source code compiled')
+          PY

@@ -1,9 +1,7 @@
 name: HS 14-pair response-stratified sensitivity
+# Computationally expensive, external-data workflows must be launched intentionally.
+# PRs run the lightweight research-static-checks workflow instead.
 on:
-  pull_request:
-    paths:
-      - 'projects/hs_followup/**'
-      - '.github/workflows/hs-response-followup.yml'
   workflow_dispatch:
 permissions:
   contents: read

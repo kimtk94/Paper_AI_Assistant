@@ -1,9 +1,7 @@
 name: HS public treatment response clinical balance
+# Computationally expensive, external-data workflows must be launched intentionally.
+# PRs run the lightweight research-static-checks workflow instead.
 on:
-  pull_request:
-    paths:
-      - 'projects/hs_followup/clinical_covariate_qc.py'
-      - '.github/workflows/hs-clinical-balance.yml'
   workflow_dispatch:
 permissions:
   contents: read

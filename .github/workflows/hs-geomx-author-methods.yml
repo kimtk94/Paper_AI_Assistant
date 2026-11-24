@@ -1,9 +1,7 @@
 name: HS original GeoMx supplementary methods provenance
+# Computationally expensive, external-data workflows must be launched intentionally.
+# PRs run the lightweight research-static-checks workflow instead.
 on:
-  pull_request:
-    paths:
-      - 'projects/hs_spatial_gse294009/original_supplement_methods_audit.py'
-      - '.github/workflows/hs-geomx-author-methods.yml'
   workflow_dispatch:
 permissions:
   contents: read
