@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "snapshot_date": "2026-11-22",
+  "git_snapshot_date": "2026-11-24",
+  "notice": "Public-facing drafts only. No patient records, CRM ownership, private customer emails, quote pricing or actual outreach.",
+  "source_of_truth": "Google Drive editable documents",
+  "proposals": [
+    {
+      "id": "01",
+      "slug": "ipf",
+      "researcher": "김송이·박무석",
+      "proposal": "proposals/2026-11/01_ipf.md",
+      "email": "proposals/2026-11/emails/01_ipf.md",
+      "source_doc": "https://docs.google.com/document/d/138eOYtN0ANGqHcS7JyJzKuOI83i92lLwfHFFOSB5RpM/edit",
+      "delivery_pdf": "https://drive.google.com/file/d/1j0PYjyBrBc2LLQfLreu4T9DIRjuEYZ4f/view",
+      "doi": [
+        "10.1186/s12931-026-03504-w",
+        "10.1186/s12931-025-03377-5",
+        "10.1038/s41598-020-64759-x"
+      ]
+    },
+    {
+      "id": "02",
+      "slug": "hs",
+      "researcher": "이영인·이주희",
+      "proposal": "proposals/2026-11/02_hs.md",
+      "email": "proposals/2026-11/emails/02_hs.md",
+      "source_doc": "https://docs.google.com/document/d/1XgGhrSez_QO5jvSuuwqcouAJ8fSlr0rWcPu8oj-Mqrk/edit",
+      "delivery_pdf": "https://drive.google.com/file/d/1uW3KSQuEszIIyMXhTAxXtzl0nO_1PlyM/view",
+      "doi": [
+        "10.1016/j.jid.2026.01.041",
+        "10.1159/000550262",
+        "10.1111/exd.70244"
+      ]
+    },
+    {
+      "id": "03",
+      "slug": "endometriosis",
+      "researcher": "서석교",
+      "proposal": "proposals/2026-11/03_endometriosis.md",
+      "email": "proposals/2026-11/emails/03_endometriosis.md",
+      "source_doc": "https://docs.google.com/document/d/1y-ZwquQMm9rhwWZremZmMIzYyqeeCAcQM5ZM70fzTTQ/edit",
+      "delivery_pdf": "https://drive.google.com/file/d/1N43OyKh9dAJ2grpsZGCGFE9flIdjLPUg/view",
+      "doi": [
+        "10.3349/ymj.2024.0518"
+      ]
+    },
+    {
+      "id": "04",
+      "slug": "migraine",
+      "researcher": "주민경",
+      "proposal": "proposals/2026-11/04_migraine.md",
+      "email": "proposals/2026-11/emails/04_migraine.md",
+      "source_doc": "https://docs.google.com/document/d/1eBdtik1wfomL5flQJGwHM5e8VcvZmAyiJ3aEl8shPkU/edit",
+      "delivery_pdf": "https://drive.google.com/file/d/1yF-MZ1RkxsR2uVkD8hqR6wUZRyUDuWMj/view",
+      "doi": [
+        "10.1186/s10194-026-02268-4"
+      ]
+    },
+    {
+      "id": "05",
+      "slug": "nmosd",
+      "researcher": "권순욱",
+      "proposal": "proposals/2026-11/05_nmosd.md",
+      "email": "proposals/2026-11/emails/05_nmosd.md",
+      "source_doc": "https://docs.google.com/document/d/1zODoaUatbK0AsACs9qY3PZrjsgIxHvilkHohUCmoilY/edit",
+      "delivery_pdf": "https://drive.google.com/file/d/1AJGa8OrY6PD2vLtiUF5n7zRtgZvCiji8/view",
+      "doi": [
+        "10.1177/13524585261494379",
+        "10.1212/NXI.0000000000200611"
+      ]
+    },
+    {
+      "id": "06",
+      "slug": "musk_mg",
+      "researcher": "신하영",
+      "proposal": "proposals/2026-11/06_musk_mg.md",
+      "email": "proposals/2026-11/emails/06_musk_mg.md",
+      "source_doc": "https://docs.google.com/document/d/1s4uEb23M5QLGFvqhjPNnrw2tiiS32x7jwqCqKNu_n6E/edit",
+      "delivery_pdf": "https://drive.google.com/file/d/1Tt7jl5sM9GLv5jAj9O1vg2QnFEzKbdKp/view",
+      "doi": [
+        "10.3346/jkms.2026.41.e151",
+        "10.1212/NXI.0000000000200313"
+      ]
+    }
+  ]
+}

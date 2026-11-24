@@ -1,0 +1,66 @@
+name: Novogene collaboration proposal packet
+
+on:
+  pull_request:
+    paths:
+      - 'proposals/2026-11/**'
+      - '.github/workflows/proposal-packet.yml'
+  push:
+    branches: ['main', 'docs/**']
+    paths:
+      - 'proposals/2026-11/**'
+      - '.github/workflows/proposal-packet.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proposal-packet-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check sources, six documents and privacy guards
+        run: python proposals/2026-11/validate.py
+      - name: Run unit and negative tests
+        run: python -m unittest discover -s proposals/2026-11/tests -v
+
+  pdf:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Korean fonts and renderer
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-nanum
+          python -m pip install 'reportlab>=4.2,<5'
+      - name: Render six proposal PDFs
+        run: python proposals/2026-11/build_pdfs.py
+      - name: Confirm six PDF headers and file sizes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          files = list(Path('output/proposal-packet').glob('*.pdf'))
+          assert len(files) == 6, len(files)
+          assert all(p.read_bytes()[:4] == b'%PDF' and p.stat().st_size > 3000 for p in files)
+          print('PASS: six valid proposal PDF files')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: six-proposal-pdfs
+          path: output/proposal-packet/*.pdf
+          if-no-files-found: error
+          retention-days: 30
