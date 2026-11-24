@@ -127,16 +127,30 @@ def audit(input_path: Path, dest: Path, manifest: dict):
             if mat:
                 gsm, group, idx = mat
                 k = kind_of(c)
-                sets.setdefault(k, {})[gsm] = c
+                group_cols = sets.setdefault(k, {})
+                # Never let a second column silently replace the first GSM match.
+                # Multiple measurements for one sample/metric require manual review.
+                if gsm in group_cols:
+                    rec.setdefault("ambiguous_matches", []).append(
+                        {"gsm": gsm, "kind": k, "columns": [group_cols[gsm], c]}
+                    )
+                else:
+                    group_cols[gsm] = c
                 rec["matched"].append({"column": c, "gsm": gsm, "group": group, "kind": k})
         inventory.append(rec)
         for kind, colmap in sets.items():
-            if len(colmap) == 8:
+            if len(colmap) == 8 and not any(
+                a["kind"] == kind for a in rec.get("ambiguous_matches", [])
+            ):
                 candidates.append((sheet, kind, colmap))
     (dest / "sheet_inventory.json").write_text(json.dumps(inventory, ensure_ascii=False, indent=2), encoding="utf8")
     # Audit explicitly records ambiguity rather than silently picking arbitrary sample columns.
     if not candidates:
-        manifest["analysis"] = {"status": "BLOCKED_MATRIX_MAPPING", "reason": "No sheet contained unambiguous 8 matched GSM/title columns for a common numeric metric", "candidate_count": 0}
+        ambiguous = [
+            {"sheet": row["sheet"], "matches": row["ambiguous_matches"]}
+            for row in inventory if row.get("ambiguous_matches")
+        ]
+        manifest["analysis"] = {"status": "BLOCKED_AMBIGUOUS_SAMPLE_MAPPING" if ambiguous else "BLOCKED_MATRIX_MAPPING", "reason": "Duplicate columns match the same GSM/metric; inspect inventory before analysis" if ambiguous else "No sheet contained 8 matched GSM/title columns for a common numeric metric", "candidate_count": 0, "ambiguous_sheets": ambiguous}
         return
     priority = {"count": 0, "tpm": 1, "fpkm": 2, "rpkm": 3, "unspecified": 4}
     candidates.sort(key=lambda x: priority.get(x[1], 10))
