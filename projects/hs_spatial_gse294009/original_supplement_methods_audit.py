@@ -5,7 +5,7 @@ Finds the source PDF inside the official Europe PMC supplementary ZIP.
 Fails closed when original source is unavailable; never substitutes typical GeoMx QC.
 Outputs bounded article-provenanced snippets and a structured checklist, not a PDF copy.
 """
-import argparse,datetime as dt,hashlib,io,json,re,urllib.request,urllib.error,zipfile
+import argparse,datetime as dt,hashlib,io,json,re,time,urllib.request,urllib.error,zipfile
 from pathlib import Path
 
 PMCID="PMC13552446"
@@ -21,13 +21,37 @@ CATEGORIES={
   "differential expression":r"differential|limma|DESeq2|edgeR|FDR|adjusted\s+p",
   "ROI quality":r"\bROI\b|region(?:s)?\s+of\s+interest|segment|nuclei|sequenc(?:ing|e)\s+sat",
 }
-def download():
+# Retry only transient server/rate-limit failures. Do not silently switch to a
+# different unverified archive; the official archive's identity is authoritative.
+TRANSIENT_HTTP={429,500,502,503,504}
+MAX_ATTEMPTS=3
+
+def fetch_official_archive():
+    attempts=[]
     req=urllib.request.Request(ARCHIVE,headers={"User-Agent":UA,"Accept":"application/zip,*/*"})
-    with urllib.request.urlopen(req,timeout=125) as response:
-        blob=response.read(MAX+1)
-        meta={"url":ARCHIVE,"http":response.status,"bytes":len(blob),
-              "sha256":hashlib.sha256(blob).hexdigest(),
-              "content_type":response.headers.get("content-type","")}
+    for attempt in range(1,MAX_ATTEMPTS+1):
+        try:
+            with urllib.request.urlopen(req,timeout=125) as response:
+                blob=response.read(MAX+1)
+                meta={"url":ARCHIVE,"http":response.status,"bytes":len(blob),
+                      "sha256":hashlib.sha256(blob).hexdigest(),
+                      "content_type":response.headers.get("content-type",""),
+                      "attempts":attempts+[{"attempt":attempt,"status":"OK","http":response.status}]}
+            return blob,meta
+        except urllib.error.HTTPError as exc:
+            attempts.append({"attempt":attempt,"status":"HTTP_ERROR","http":exc.code})
+            if exc.code not in TRANSIENT_HTTP or attempt==MAX_ATTEMPTS:
+                raise RuntimeError("STOP: official archive unavailable; attempts="+json.dumps(attempts)) from exc
+        except (urllib.error.URLError,TimeoutError) as exc:
+            attempts.append({"attempt":attempt,"status":"NETWORK_ERROR","reason":type(exc).__name__})
+            if attempt==MAX_ATTEMPTS:
+                raise RuntimeError("STOP: official archive unavailable; attempts="+json.dumps(attempts)) from exc
+        # A bounded backoff rather than a hammering retry loop.
+        time.sleep(min(2**attempt,8))
+    raise RuntimeError("STOP: official archive unavailable after bounded retries")
+
+def download():
+    blob,meta=fetch_official_archive()
     if len(blob)>MAX:raise ValueError("STOP: official source archive too large")
     if not zipfile.is_zipfile(io.BytesIO(blob)):raise ValueError("STOP: official source not a ZIP")
     with zipfile.ZipFile(io.BytesIO(blob)) as z:
