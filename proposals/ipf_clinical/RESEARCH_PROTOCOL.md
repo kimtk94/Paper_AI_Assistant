@@ -41,3 +41,7 @@ Not a newly discovered diagnostic signature. We prospectively specify FCN3 & GPX
 - Existing code PR: https://github.com/kimtk94/Paper_AI_Assistant/pull/23
 
 **Commercial/territory safety:** Account/Contact Owner and prior contact history must be confirmed. No automatic outreach, no actual patient uploads to CI, no pricing or authorship guarantees.
+
+## 2026-11-24 update
+
+[CLINICAL_DESIGN_20261124.md](CLINICAL_DESIGN_20261124.md) supersedes earlier planning/approval language and distinguishes preliminary screening, assay qualification and outcome adjudication. It incorporates the #23 evidence replay, recent comparator literature, two-marker multiplicity planning, informative loss/death/transplant, and the v2 local-only readiness screen. **All actual cohort/clinical gates remain HOLD.** The old single-marker N=85 benchmark is not the two-marker design; at assumed |r|=.30 with conservative family-wise planning, 103 complete records are needed before covariate/attrition adjustments.

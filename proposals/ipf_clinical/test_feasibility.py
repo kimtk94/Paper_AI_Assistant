@@ -23,8 +23,9 @@ class Tests(unittest.TestCase):
         self.assertTrue(audit([row(i) for i in range(59)])['status'].startswith('HOLD'))
     def test_duplicates_not_counted(self):
         x=audit([row(i) for i in range(80)]+[row(4)])
-        self.assertEqual(x['evaluable_n'],80)
-        self.assertEqual(x['exclusion_reasons']['missing_or_duplicate_subject_key'],1)
+        self.assertEqual(x['evaluable_n'],79)
+        self.assertEqual(x['duplicate_subject_rows_excluded'],2)
+        self.assertEqual(x['exclusion_reasons']['missing_or_duplicate_subject_key'],2)
     def test_invalid_clinical_timing_and_irb(self):
         a=[row(i) for i in range(75)]+[row(90,{'followup_fvc_date':(BASE+dt.timedelta(days=600)).isoformat()}),row(91,{'irb_permits_reuse':'no'})]
         x=audit(a)
