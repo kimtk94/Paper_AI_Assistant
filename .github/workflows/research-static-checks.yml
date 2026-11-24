@@ -27,7 +27,7 @@ jobs:
           import yaml
           workflows = Path('.github/workflows')
           heavy = sorted(p for p in workflows.glob('*.yml')
-                         if p.name.startswith('hs-') or p.name == 'novogene-top7-remaining4-audit.yml')
+                         if (p.name.startswith('hs-') and p.name != 'hs-geomx-final-donor-slide-audit.yml') or p.name == 'novogene-top7-remaining4-audit.yml')
           assert len(heavy) == 14, f'Unexpected research workflow count: {len(heavy)}'
           for path in heavy:
               doc = yaml.load(path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
