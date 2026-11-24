@@ -143,7 +143,11 @@ def main():
     result['mtx_parsed_entries']=total_mtx_entries
     result['mtx_target_entries']=target_entries
     if total_mtx_entries!=result['mtx_dims']['nonzero_entries']:
-        result['decision']='HOLD_MTX_TRUNCATED'
+        result['decision']='ERROR_MTX_TRUNCATED'
+        result['error']='MatrixMarket entry count differs from the header; all derived expression estimates are invalid.'
+        (out/'summary.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+        (out/'REPORT.md').write_text('# IPF targeted MTX audit\n\n**ERROR_MTX_TRUNCATED** — incomplete source matrix; no derived expression CSV was emitted.\n',encoding='utf-8')
+        raise SystemExit(1)
     else:result['decision']='GO_DESCRIPTIVE_DONOR_ANALYSIS'
     # Donor x cell type table, one row per (donor, celltype, gene).
     donorrows=[]
