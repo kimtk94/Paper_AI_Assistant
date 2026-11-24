@@ -1,0 +1,63 @@
+name: Novogene Top 7 remaining four public data baseline
+# Computationally expensive, external-data workflows must be launched intentionally.
+# PRs run the lightweight research-static-checks workflow instead.
+on:
+  workflow_dispatch:
+jobs:
+  public-dataset-audit:
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [hs_therapy, musk_mg, nmosd, hs_spatial]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install public-data reader
+        run: python -m pip install pandas==2.2.3
+      - name: Run public GEO scientific design audit
+        run: python projects/top7_remaining4/geo_baseline.py --role '${{ matrix.role }}' --out 'output/top7_remaining4/${{ matrix.role }}'
+      - name: Refine patient/ROI and candidate matrix mapping
+        run: python projects/top7_remaining4/refine.py --role '${{ matrix.role }}' --out 'output/top7_remaining4/${{ matrix.role }}'
+      - name: Check HS paired source and model eligibility
+        id: hs_gate
+        if: matrix.role == 'hs_therapy'
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path('output/top7_remaining4/hs_therapy')
+          q=json.loads((p/'REFINED_QC.json').read_text())
+          ready=(q.get('status')=='QC_PAIRED_DESIGN_READY_EXPLORATORY' and
+                 q.get('mapping_method')=='FULL_INDIVIDUAL_COUNT_VECTOR_AND_LIBRARY_IDENTITY' and
+                 q.get('explicit_column_map_n')==59 and q.get('lesional_pairs')==14 and
+                 q.get('paired_model_input')=='READY_COUNT_VERIFIED' and
+                 (p/'hs_therapy_paired_counts.csv').is_file() and
+                 (p/'hs_therapy_paired_metadata.csv').is_file())
+          if not ready:
+              raise SystemExit('STOP: HS model not eligible; audit decision='+str(q.get('status')))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              f.write('ready=true\n')
+          PY
+      - name: Install DESeq2 only for verified HS paired lesion samples
+        if: matrix.role == 'hs_therapy' && steps.hs_gate.outputs.ready == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y r-bioc-deseq2
+      - name: Paired HS anti-TNF lesion DESeq2
+        if: matrix.role == 'hs_therapy' && steps.hs_gate.outputs.ready == 'true'
+        run: Rscript projects/top7_remaining4/hs_paired_deseq2.R output/top7_remaining4/hs_therapy
+      - name: Remove raw matrices from CI artifact
+        if: always() && matrix.role == 'hs_therapy'
+        run: rm -f output/top7_remaining4/hs_therapy/hs_therapy_paired_counts.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: top7-${{ matrix.role }}-public-audit
+          path: output/top7_remaining4/${{ matrix.role }}/
+          if-no-files-found: warn
+          retention-days: 45

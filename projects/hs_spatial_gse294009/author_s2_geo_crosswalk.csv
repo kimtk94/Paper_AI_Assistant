@@ -1,0 +1,147 @@
+gsm,patient,author_stage_from_roi,clinical_stage_from_s1,discordant_stage,institution,slide_preparation,author_roi_classification
+GSM8896274,HS38,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896275,HS38,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896276,HS38,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896277,HS38,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_SinusTract
+GSM8896278,HS38,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_SinusTract
+GSM8896279,HS38,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_SinusTract
+GSM8896280,HS38,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_SinusTract
+GSM8896282,HS38,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_SinusTract
+GSM8896283,HS38,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896284,HS38,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896285,HS38,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896298,HS37,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896299,HS37,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896300,HS37,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896301,HS37,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896302,HS37,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896303,HS37,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896304,HS37,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896305,HS37,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896306,HS37,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896307,HS37,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Gland
+GSM8896308,HS37,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Gland
+GSM8896309,HS37,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Gland
+GSM8896322,HS36,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896323,HS36,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896324,HS36,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896331,HS36,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896332,HS36,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896333,HS36,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896334,HS36,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896335,HS36,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896336,HS36,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896343,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896344,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896345,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896346,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896347,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896348,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_Epidermis
+GSM8896355,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Epithelium_SinusTract
+GSM8896356,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896357,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896358,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896359,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896360,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896361,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896362,HS35,Late,Late,0,"University of California, Davis",Fresh Frozen slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896363,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896364,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_HairFollicle
+GSM8896365,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896366,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896367,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896368,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896369,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896370,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_HairFollicle
+GSM8896371,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896372,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896373,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_SinusTract
+GSM8896374,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_SinusTract
+GSM8896375,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_SinusTract
+GSM8896376,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896377,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_SinusTract
+GSM8896378,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_SinusTract
+GSM8896379,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_SinusTract
+GSM8896380,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896381,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896382,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_HairFollicle
+GSM8896383,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_HairFollicle
+GSM8896384,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Gland
+GSM8896385,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Gland
+GSM8896386,HS02,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Gland
+GSM8896387,HS01,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896388,HS12,Early,Late,1,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896391,HS01,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896393,HS12,Early,Late,1,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_SinusTract
+GSM8896394,HS12,Early,Late,1,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_SinusTract
+GSM8896396,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Epithelium_Epidermis
+GSM8896397,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Epithelium_Epidermis
+GSM8896398,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Inflammatory Aggregate_SuperficialDermis
+GSM8896399,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Inflammatory Aggregate_SuperficialDermis
+GSM8896400,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Inflammatory Aggregate_SuperficialDermis
+GSM8896401,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Epithelium_CysticWall
+GSM8896402,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Epithelium_CysticWall
+GSM8896403,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Epithelium_CysticWall
+GSM8896404,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Epithelium_CysticWall
+GSM8896405,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Epithelium_CysticWall
+GSM8896406,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Epithelium_Epidermis
+GSM8896407,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Epithelium_HairFollicle
+GSM8896408,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Epithelium_HairFollicle
+GSM8896409,AC01,Other,Other,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,AcneConglobata_Epithelium_Epidermis
+GSM8896410,HS12,Early,Late,1,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896411,HS14,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Epithelium_SinusTract
+GSM8896412,HS14,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Epithelium_SinusTract
+GSM8896413,HS14,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Epithelium_SinusTract
+GSM8896414,HS14,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Epithelium_SinusTract
+GSM8896415,HS14,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Epithelium_SinusTract
+GSM8896416,HS14,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Epithelium_SinusTract
+GSM8896417,HS14,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896418,HS14,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896419,HS14,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896420,HS14,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896421,HS14,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896422,HS05,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Epithelium_Epidermis
+GSM8896423,HS05,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Epithelium_Epidermis
+GSM8896424,HS05,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896425,HS05,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896426,HS05,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896427,HS05,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896428,HS08,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Epithelium_Epidermis
+GSM8896429,HS08,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Epithelium_Epidermis
+GSM8896430,HS08,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Epithelium_Epidermis
+GSM8896432,HS08,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896433,HS08,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896434,HS08,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896435,HS08,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896436,HS08,Late,Late,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Late_HS_Inflammatory Aggregate_DeepDermis
+GSM8896437,HS26,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896438,HS26,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896439,HS26,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896440,HS26,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896441,HS21,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Gland
+GSM8896442,HS21,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896443,HS21,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896444,HS21,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896445,HS21,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896450,HS20,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896451,HS20,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896452,HS20,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_HairFollicle
+GSM8896453,HS20,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896454,HS20,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_SuperficialDermis
+GSM8896455,HS20,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_HairFollicle
+GSM8896456,HS20,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896457,HS25,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_SinusTract
+GSM8896458,HS25,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_SinusTract
+GSM8896459,HS25,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896460,HS25,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896461,HS25,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896462,HS25,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896463,HS25,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896464,HS25,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896465,HS23,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896466,HS23,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896467,HS23,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_Epidermis
+GSM8896468,HS23,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_SinusTract
+GSM8896469,HS23,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Epithelium_SinusTract
+GSM8896470,HS23,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
+GSM8896471,HS23,Early,Early,0,Yonsei University,Formalin-Fixed Paraffin-Embedded slide,Early_HS_Inflammatory Aggregate_DeepDermis
