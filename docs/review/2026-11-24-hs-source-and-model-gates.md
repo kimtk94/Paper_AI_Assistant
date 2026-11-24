@@ -69,3 +69,13 @@ The historical 2023 DOI is `10.1093/bjd/ljad274`. The run returned HTTP 403/429/
 - **HTTP_ERROR** is not evidence that a source does not exist.
 - **HOLD_SOURCE** cannot be overridden with approximate or fabricated counts.
 - Keep #25 in **Draft**, do not merge to main or market results as confirmed until the appropriate independent gates are satisfied.
+
+
+## Evidence 5 — historical 24 ROI source request and candidate intake
+
+- **Existing 2023 source scan:** [run 45375886768](https://github.com/kimtk94/Paper_AI_Assistant/actions/runs/45375886768) queried publisher, Crossref, PubMed/GDS and Europe PMC but returned **no paper-linked 24-ROI expression file**. The trace contains 403/429/503 endpoint errors; the discovery was **incomplete**, not an authoritative proof of data absence.
+- The 2023 paper [DOI 10.1093/bjd/ljad274](https://doi.org/10.1093/bjd/ljad274) concerns three early-HS cases compared with three epidermal cyst samples. The 2026 S2 labels HS41 (6 ROI), HS42 (6), HS43 (12) are metadata from that older cohort. A different public HS dataset is not a substitute.
+- Added offline `projects/hs_spatial_gse294009/historic24_quant_candidate_gate.py` to validate a *candidate* 24-column nonnegative integer count matrix **only** against the verified original S2 ROI manifest; requires exact ROI keys, distinct gene IDs, minimum feature coverage and no zero-count ROI. It returns `HOLD_HISTORICAL_24_COUNT_MATRIX_NOT_SUPPLIED` if no candidate is supplied. Even a syntactically valid candidate returns `CANDIDATE_FORMAT_PASS__HOLD_INDEPENDENT_SOURCE_AND_METHOD_REVIEW`, with `combined_156_roi_analysis_allowed=false`.
+- Added synthetic-only tests covering valid-format-but-unverified, missing/duplicate/wrong ROI, normalized fractions, negative counts, inadequate features and zero libraries. No 2023 expression values have been generated or asserted.
+- Drafted an unsent request for the original DCC/count files, assay/probe map, exact ROI crosswalk, QC/LOQ, count units, and license/consent status. **Source procurement and permissions remain HUMAN/AUTHOR dependent.** Full request, instructions, approval stages and artifact deadlines: [2023 historical 24 ROI source request and intake](2026-11-24-hs-historic24-source-request-and-intake.md).
+- Keep `HOLD_NO_VERIFIED_PAPER_LINKED_2023_ROI_QUANT` and `HOLD_156_ROI_REPLICATION`. The new gate checks *format* only and does not authorize pooled inference or biomarker claims.
