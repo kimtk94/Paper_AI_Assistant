@@ -1,0 +1,25 @@
+name: IPF GSE136831 independent scRNA metadata audit
+# External data research is opt-in; routine PR CI uses offline evidence tests.
+on:
+  workflow_dispatch:
+jobs:
+  metadata-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check Python script syntax
+        run: python -m py_compile projects/ipf_pxd010965/gse136831_metadata.py
+      - name: Audit independent GSE136831 scRNA metadata (no MTX)
+        run: python projects/ipf_pxd010965/gse136831_metadata.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ipf-gse136831-public-metadata
+          path: output/ipf_gse136831_metadata/
+          retention-days: 30
