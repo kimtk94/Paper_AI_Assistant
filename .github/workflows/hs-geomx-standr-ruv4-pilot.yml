@@ -124,6 +124,17 @@ jobs:
                   assert result['status'] in ('PASS_MODEL_FIT','HOLD_MODEL_ERROR','HOLD_RUV_ERROR')
           print('SOURCE_AND_MODEL_ACCOUNTABILITY_PASS: no significance claim')
           PY
+      - name: Fail closed unless all 44 model fits pass the independent donor-wise QC gate
+        run: |
+          python projects/hs_spatial_gse294009/verify_full_refit_slide_artifact.py --input output/hs_standr_full_refit/HS_FULL_REFIT_SLIDE_DONOR_LOO_AUDIT.json --out output/hs_standr_full_refit_validation
+      - name: Preserve producer-side independent QC decision
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hs-132-full-nuisance-producer-QC-decision
+          path: output/hs_standr_full_refit_validation/
+          retention-days: 45
+          if-no-files-found: warn
       - name: Preserve separate donor-wise nuisance-reestimated model sensitivity evidence
         if: always()
         uses: actions/upload-artifact@v4
