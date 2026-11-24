@@ -1,0 +1,96 @@
+{
+  "review_date": "2026-11-24",
+  "repository": "kimtk94/Paper_AI_Assistant",
+  "scope": "Only bounded public-data analysis metadata and cryptographic provenance; no original paper PDF/XLSX or expression matrix is copied into this repository.",
+  "source_files": [
+    {
+      "run": 44908096673,
+      "artifact": 14708172624,
+      "expires_at": "2026-12-21T13:18:01Z",
+      "zip_sha256": "0ede3e439ee8278db8f48e20392230a64ee5a2fcdd84245694ab34fdcfa046ab",
+      "members": [
+        {
+          "name": "ORIGINAL_METHODS_AUDIT.json",
+          "sha256": "5dacff48066de1fd5a765b2482d7fd230f60e0ec1e2f62aa78e422451125ab0f",
+          "bytes": 41552
+        }
+      ],
+      "disposition": "checksum_only; retain authorized original separately"
+    },
+    {
+      "run": 45375886636,
+      "artifact": 14910769107,
+      "expires_at": "2026-12-24T10:34:47Z",
+      "zip_sha256": "67f1732eb28b1e9bdc35e647607d1d495c1ce5cea2f0e174f8ac15c3d0a16729",
+      "members": [
+        {
+          "name": "NIHMS2203138-supplement-Supplementary_Table_1-3.xlsx",
+          "sha256": "fb65bdc9fd578eb4746c428faf9c7d4d4c37d6ef248205fcf36ae0df5317de9a",
+          "bytes": 48726
+        },
+        {
+          "name": "HISTORIC_24_EXPECTED_ROI_MANIFEST.csv",
+          "sha256": "1ea9ee53c029d18562d4b519f60cd70517df54affa713e65fe1f75bada9fc8ec",
+          "bytes": 3132
+        },
+        {
+          "name": "HS_SOURCE_STAGE_SITE_QC.json",
+          "sha256": "c80f7ae12712a604e7f7bfac646764833c7c5484af75a6434fca6c91ac151c4e",
+          "bytes": 4118
+        }
+      ],
+      "disposition": "checksum_only; preserve authorized source bytes separately"
+    },
+    {
+      "run": 45375886768,
+      "artifact": 14910169962,
+      "expires_at": "2026-12-24T10:33:46Z",
+      "zip_sha256": "5c63dee39c7e7c0e4cabe29ac3ff13064e25684322f05d3a2cb3bdde601dd4ac",
+      "members": [
+        {
+          "name": "HISTORICAL_24_PUBLIC_SOURCE_AUDIT.json",
+          "sha256": "9f808ff8bea782c54c71afb1541ef21f532ccf3da9213d8e05012e4eea9f129d",
+          "bytes": 4407
+        }
+      ],
+      "disposition": "checksum_only; no confirmed 24-ROI expression data"
+    },
+    {
+      "run": 45375886224,
+      "artifact": 14911168655,
+      "producer_commit": "1a520e0dd952efeff26070788d0247e0b17c5502",
+      "expires_at": "2027-01-08T10:44:39Z",
+      "zip_sha256": "8c413b0046b908fa1f298b08531dcfda90caf433622b52643326e06266e6420e",
+      "members": [
+        {
+          "name": "HS_FULL_REFIT_SLIDE_DONOR_LOO_AUDIT.json",
+          "sha256": "23924f48b44b16dc9a91247285094bcb1d1e847cbcbcfb3ad67c08357de1efd6",
+          "bytes": 24738,
+          "preserved_path": "docs/review/evidence/hs_full_refit_44927009405.json",
+          "disposition": "same exact bytes as previously preserved member"
+        }
+      ]
+    },
+    {
+      "run": 45375886224,
+      "artifact": 14910914934,
+      "producer_commit": "1a520e0dd952efeff26070788d0247e0b17c5502",
+      "expires_at": "2027-01-08T10:44:38Z",
+      "zip_sha256": "c400d4b2dd1ab1852eb8b81253155a52cd9793d80b277114234e52257a20313f",
+      "members": [
+        {
+          "name": "HS_FINAL_QC_GATE.json",
+          "sha256": "5d170d3addef8a334255ac7b1a1dbe723e7d39d0aba93961733cca700ad49bc4",
+          "bytes": 1699,
+          "preserved_path": "docs/review/evidence/hs_full_refit_45375886224.qc.json",
+          "disposition": "exact producer-side independent QC output"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Zip digests match GitHub API and locally inspected bytes.",
+    "Model audit is exploratory only; not a full raw count archive, independent clinical validation or paper reproduction.",
+    "Source file checksums alone do not preserve source bytes. Authorized external storage is still required."
+  ]
+}

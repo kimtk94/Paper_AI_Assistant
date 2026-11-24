@@ -1,0 +1,55 @@
+{
+  "status": "EXPLORATORY_FULL_REFIT_AND_SLIDE_DIRECTION_PASS__PAPER_AND_BIOMARKER_HOLD",
+  "verified_input_sha256": "23924f48b44b16dc9a91247285094bcb1d1e847cbcbcfb3ad67c08357de1efd6",
+  "source_matrix_sha256": "943dff9ffcd6a9b75b0356a1c388863b48ec95804cf1d004ca17571a4ce5c169",
+  "n_full_model_success": 4,
+  "n_fold_model_success": 40,
+  "n_unique_heldout_donors": 10,
+  "n_fold_direction_reversal": 0,
+  "strictly_exploratory": true,
+  "study_replication": false,
+  "differential_expression_significance": false,
+  "note": "Folds reestimate standR/NCG/RUV4 but estimate coefficients only from retained patients; not test-set prediction or independent biological validation. n Late donors=3.",
+  "model_summary": [
+    {
+      "normalization": "TMM",
+      "model": "Stage_RUV",
+      "n_model_success": 11,
+      "n_donor_refits": 10,
+      "baseline_effect": 2.1944,
+      "loo_min": 1.0455,
+      "loo_max": 2.9316,
+      "n_neg_or_zero": 0
+    },
+    {
+      "normalization": "TMM",
+      "model": "Stage_Slide_RUV",
+      "n_model_success": 11,
+      "n_donor_refits": 10,
+      "baseline_effect": 3.6545,
+      "loo_min": 1.9435,
+      "loo_max": 4.8799,
+      "n_neg_or_zero": 0
+    },
+    {
+      "normalization": "upperquartile",
+      "model": "Stage_RUV",
+      "n_model_success": 11,
+      "n_donor_refits": 10,
+      "baseline_effect": 2.0452,
+      "loo_min": 1.0313,
+      "loo_max": 2.8945,
+      "n_neg_or_zero": 0
+    },
+    {
+      "normalization": "upperquartile",
+      "model": "Stage_Slide_RUV",
+      "n_model_success": 11,
+      "n_donor_refits": 10,
+      "baseline_effect": 3.1341,
+      "loo_min": 1.5456,
+      "loo_max": 4.0106,
+      "n_neg_or_zero": 0
+    }
+  ]
+}
