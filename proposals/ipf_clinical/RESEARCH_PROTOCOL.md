@@ -27,6 +27,7 @@
 
 - GO_PILOT only after IRB/consent, same-person sample linkage, assay detectability, usable n≥60 (prefer 80), 9–15 month clinical data and missingness review.
 - HOLD if sample/clinical linkage or coverage unknown, n<60, or assay nondetect.
+- Screening QC: age must be finite numeric; required covariates cannot be missing/unknown placeholders. Explicit `none` for smoking or antifibrotic treatment remains a recorded value. Hemolysis must be explicitly negative (`no`, `n`, `false`, `0`); positive or unconfirmed status requires review. This adds no age eligibility cutoff or assay-detection claim.
 - STOP/REDESIGN if only prevalent IPF vs healthy controls without progression data (already crowded research area).
 
 ## Why this is different from prior work

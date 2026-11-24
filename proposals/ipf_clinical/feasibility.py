@@ -8,6 +8,7 @@ import argparse
 import csv
 import datetime as dt
 import json
+import math
 from collections import Counter
 from pathlib import Path
 
@@ -19,9 +20,25 @@ COLUMNS = [
     'batch', 'hemolysis_flag',
 ]
 YES = {'yes', 'y', 'true', '1'}
+NO = {'no', 'n', 'false', '0'}
+MISSING_TOKENS = {
+    '', 'na', 'n/a', 'n.a.', 'nan', 'null', 'none', 'unknown', 'unk',
+    'not known', 'not available', 'not recorded', 'not assessed',
+    'not collected', 'missing', 'pending', 'tbd', '-', '--', '?',
+}
+
+def normalize_token(x):
+    return '' if x is None else ' '.join(str(x).strip().lower().split())
 
 def yes(x):
-    return str(x or '').strip().lower() in YES
+    return normalize_token(x) in YES
+
+def missing_covariate(field, value):
+    token = normalize_token(value)
+    # An explicit absence of smoking/treatment is a recorded covariate, not NA.
+    if field in {'smoking', 'antifibrotic'} and token == 'none':
+        return False
+    return token in MISSING_TOKENS
 
 def parse_date(x):
     try: return dt.date.fromisoformat(str(x).strip())
@@ -56,11 +73,17 @@ def audit(rows, min_pilot=60):
         base, final=as_float(r.get('baseline_fvc_percent')), as_float(r.get('followup_fvc_percent'))
         if base is None or final is None or not(0 < base <= 150 and 0 < final <= 150):
             reasons['FVC_missing_or_implausible']+=1; continue
-        missing=[x for x in ['age','sex','smoking','antifibrotic','batch'] if not str(r.get(x) or '').strip()]
+        missing=[x for x in ['age','sex','smoking','antifibrotic','batch'] if missing_covariate(x, r.get(x))]
         if missing:
             reasons['missing_critical_covariate']+=1;continue
-        if yes(r.get('hemolysis_flag')):
+        age = as_float(r.get('age'))
+        if age is None or not math.isfinite(age):
+            reasons['age_not_finite_numeric']+=1;continue
+        hemolysis = normalize_token(r.get('hemolysis_flag'))
+        if hemolysis in YES:
             reasons['hemolysis_review_required']+=1;continue
+        if hemolysis not in NO:
+            reasons['hemolysis_not_confirmed']+=1;continue
         valid.append((final-base)*365.25/follow)
     n=len(valid); total=len(rows)
     if total==0: status='HOLD_NO_DATA'
