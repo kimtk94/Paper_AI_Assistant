@@ -1,10 +1,17 @@
 name: HS JCHAIN full nuisance donor LOO and slide direction final audit
 on:
-  pull_request:
-    paths:
-      - 'projects/hs_spatial_gse294009/verify_full_refit_slide_artifact.py'
-      - '.github/workflows/hs-geomx-final-donor-slide-audit.yml'
+  # Do not certify an old artifact automatically for a new PR commit.
+  # The producing workflow runs the independent verifier on its own output.
   workflow_dispatch:
+    inputs:
+      producer_run_id:
+        description: 'Successful HS standR producer workflow run ID to verify'
+        required: true
+        type: string
+      producer_commit_sha:
+        description: 'Exact 40-character commit SHA of that producer workflow run'
+        required: true
+        type: string
 permissions:
   contents: read
   actions: read
@@ -17,10 +24,43 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Download published-in-PR source pinned actual R model output
+      - name: Confirm explicitly selected producer run succeeded on matching source commit
+        id: source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PRODUCER_RUN_ID: ${{ inputs.producer_run_id }}
+          PRODUCER_COMMIT_SHA: ${{ inputs.producer_commit_sha }}
+        run: |
+          python - <<'PY'
+          import json, os, re, urllib.request
+          rid = os.environ['PRODUCER_RUN_ID']
+          sha = os.environ['PRODUCER_COMMIT_SHA']
+          if not re.fullmatch(r'[1-9][0-9]*', rid) or not re.fullmatch(r'[0-9a-fA-F]{40}', sha):
+              raise SystemExit('STOP: invalid explicit producer run ID or commit SHA')
+          repo = os.environ['GITHUB_REPOSITORY']
+          url = f'https://api.github.com/repos/{repo}/actions/runs/{rid}'
+          request = urllib.request.Request(url, headers={
+              'Authorization': 'Bearer '+os.environ['GITHUB_TOKEN'],
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+          })
+          with urllib.request.urlopen(request, timeout=30) as response:
+              run = json.load(response)
+          if (run.get('repository', {}).get('full_name') != repo or
+              run.get('path') != '.github/workflows/hs-geomx-standr-ruv4-pilot.yml' or
+              run.get('status') != 'completed' or run.get('conclusion') != 'success' or
+              run.get('head_sha', '').lower() != sha.lower()):
+              raise SystemExit('STOP: producer run repository, workflow, success, or SHA mismatch')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'run_id={rid}\n')
+              output.write(f'commit_sha={sha.lower()}\n')
+          print('VERIFIED_EXPLICIT_PRODUCER_RUN', rid, sha.lower())
+          PY
+      - name: Download the explicitly verified producer R model output
         uses: actions/download-artifact@v4
         with:
-          run-id: 44925755817
+          run-id: ${{ steps.source.outputs.run_id }}
           name: hs-132-full-nuisance-LOO-and-slide-sensitivity
           github-token: ${{ github.token }}
           path: output/hs_standr_full_refit
@@ -28,6 +68,22 @@ jobs:
         run: |
           python -m py_compile projects/hs_spatial_gse294009/verify_full_refit_slide_artifact.py
           python projects/hs_spatial_gse294009/verify_full_refit_slide_artifact.py --input output/hs_standr_full_refit/HS_FULL_REFIT_SLIDE_DONOR_LOO_AUDIT.json --out output/hs_full_refit_final_gate
+      - name: Bind final decision to the verified producer run and input bytes
+        env:
+          PRODUCER_RUN_ID: ${{ steps.source.outputs.run_id }}
+          PRODUCER_COMMIT_SHA: ${{ steps.source.outputs.commit_sha }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path('output/hs_full_refit_final_gate/HS_FINAL_QC_GATE.json')
+          gate = json.loads(p.read_text(encoding='utf-8'))
+          gate['producer_run_id'] = int(os.environ['PRODUCER_RUN_ID'])
+          gate['producer_commit_sha'] = os.environ['PRODUCER_COMMIT_SHA']
+          gate['producer_workflow'] = '.github/workflows/hs-geomx-standr-ruv4-pilot.yml'
+          gate['producer_artifact_name'] = 'hs-132-full-nuisance-LOO-and-slide-sensitivity'
+          p.write_text(json.dumps(gate, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+          PY
       - name: Independent fail-closed scientific conclusion status
         run: |
           python - <<'PY'
