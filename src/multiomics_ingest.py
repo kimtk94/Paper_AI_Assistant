@@ -11,36 +11,66 @@ from __future__ import annotations
 
 import argparse
 import json
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def _load_json(path: Path) -> dict[str, Any]:
+def _load_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def _validate_bundle(bundle: dict[str, Any], strict: bool) -> dict[str, Any]:
+def _validate_bundle(bundle: Any, strict: bool) -> dict[str, Any]:
     """Validate via pydantic models when available.
 
-    If strict=True and validation cannot run, raise an error.
+    Envelope validation always runs. Only a missing optional Pydantic dependency
+    permits a non-strict fallback; invalid records must never bypass validation.
     """
+    if not isinstance(bundle, dict):
+        raise ValueError("Bundle must be a JSON object with papers and/or ideas arrays.")
+    unknown_keys = set(bundle) - {"papers", "ideas"}
+    if not bundle or unknown_keys:
+        raise ValueError(
+            "Bundle must contain only papers and/or ideas arrays; "
+            "paper_assistants reports with results are not ingest bundles."
+        )
+    for key, rows in bundle.items():
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise ValueError(f"Bundle {key} must be an array of record objects.")
+
     try:
         from multiomics_models import parse_bundle  # local module
-
-        model = parse_bundle(bundle)
-        return model.model_dump()
-    except Exception as exc:  # noqa: BLE001 - CLI fallback is intentional
+    except ModuleNotFoundError as exc:
+        if exc.name != "pydantic":
+            raise
         if strict:
             raise RuntimeError(
-                "Strict validation failed. Install dependencies first: pip install -r requirements-multiomics.txt"
+                "Strict validation requires Pydantic. Install dependencies first: "
+                "pip install -r requirements-multiomics.txt"
             ) from exc
+        warnings.warn(
+            "Pydantic is not installed; only the bundle envelope was validated. "
+            "Install requirements-multiomics.txt for record validation.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         return bundle
+
+    model = parse_bundle(bundle)
+    return model.model_dump()
+
+
+def _write_json_exclusive(path: Path, payload: dict[str, Any]) -> None:
+    """Create a new audit file without replacing any existing run's evidence."""
+    with path.open("x", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def _append_jsonl(path: Path, rows: list[dict[str, Any]]) -> int:
@@ -61,10 +91,11 @@ def ingest_bundle(
     bundle = _validate_bundle(bundle_raw, strict=strict_validation)
 
     ts = _utc_now()
+    run_id = f"{ts}_{uuid4().hex}"
     snapshots_dir = data_dir / "snapshots"
     snapshots_dir.mkdir(parents=True, exist_ok=True)
-    snapshot_path = snapshots_dir / f"bundle_{ts}.json"
-    snapshot_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+    snapshot_path = snapshots_dir / f"bundle_{run_id}.json"
+    _write_json_exclusive(snapshot_path, bundle)
 
     papers = bundle.get("papers", [])
     ideas = bundle.get("ideas", [])
@@ -76,6 +107,7 @@ def ingest_bundle(
     idea_n = _append_jsonl(data_dir / "idea_records.jsonl", ideas_rows)
 
     manifest = {
+        "run_id": run_id,
         "ingested_at": ts,
         "input": str(input_json),
         "snapshot": str(snapshot_path),
@@ -85,7 +117,7 @@ def ingest_bundle(
 
     manifests = data_dir / "manifests"
     manifests.mkdir(parents=True, exist_ok=True)
-    (manifests / f"manifest_{ts}.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json_exclusive(manifests / f"manifest_{run_id}.json", manifest)
 
     return manifest
 

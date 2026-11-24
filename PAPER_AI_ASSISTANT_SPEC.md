@@ -219,7 +219,7 @@ python src/paper_assistants.py \
 ### 권장 운영 플로우
 
 - 매일/매주 배치로 `paper_assistants.py` 실행
-- 결과 JSON을 `src/multiomics_ingest.py`로 append-only 적재
+- 결과 JSON의 논문 정보를 검토하고 `examples/multiomics_records.example.json`의 `papers`/`ideas` 번들 스키마에 맞게 작성한 뒤 `src/multiomics_ingest.py`로 append-only 적재 (`results` 보고서 자체는 직접 적재할 수 없음)
 - 적재 데이터 기반으로 후속 아이디어 생성/랭킹(기존 `multiomics_models.py` 스키마 확장)
 
 ---
