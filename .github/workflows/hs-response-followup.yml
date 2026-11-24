@@ -24,6 +24,8 @@ jobs:
           import json,sys
           q=json.load(open('output/hs_response_followup/REFINED_QC.json'))
           assert q.get('explicit_column_map_n')==59 and q.get('lesional_pairs')==14
+          assert q.get('mapping_method')=='FULL_INDIVIDUAL_COUNT_VECTOR_AND_LIBRARY_IDENTITY'
+          assert q.get('responder_pairs')=={'YES':7,'NO':7}
           assert q.get('paired_model_input')=='READY_COUNT_VERIFIED'
           print('Strict QC PASS',q['explicit_column_map_n'],q['lesional_pairs'])
           PY

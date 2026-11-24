@@ -6,6 +6,7 @@ import argparse,csv,gzip,io,json,re,collections,tarfile,hashlib
 from pathlib import Path
 import numpy as np
 from geo_baseline import read_series,urlopen,series_path,GENES
+from evidence_guards import verify_archive_mapping, paired_lesions, nmosd_track_mapping, unique_keys
 
 def sample_profile(acc):
     samples,q=read_series(acc)
@@ -34,87 +35,39 @@ def therapy(out):
     audit={'accession':acc,'processed':q,'soft_mapping':{'fetch':src['source'],'n_samples':src['n_sample_headers'],'example_supplementary':src['gsm_file_pairs'][:8]},'status':'HOLD'}
     if body is None:return audit
     import pandas as pd
+    with gzip.GzipFile(fileobj=io.BytesIO(body)) as gz:
+        header=next(csv.reader(io.TextIOWrapper(gz,encoding='utf-8-sig')))
+    unique_keys(header[1:],'combined raw count columns')
     mat=pd.read_csv(io.BytesIO(body),compression='gzip',index_col=0)
+    unique_keys(mat.index.map(str),'combined raw gene IDs')
+    vals=mat.to_numpy(dtype=float)
+    if not np.isfinite(vals).all() or (vals<0).any() or (vals!=np.floor(vals)).any() or (vals>1e12).any() or (vals.sum(axis=0)<=0).any():
+        raise ValueError('STOP: invalid nonnegative integer raw count matrix')
     audit.update({'gene_rows':mat.shape[0],'count_columns':mat.shape[1],
         'first_count_columns':list(mat.columns[:15]),
         'gene_ids_first':list(map(str,mat.index[:10])),
         'library_sizes':{'min':float(mat.sum(axis=0).min()),'median':float(mat.sum(axis=0).median()),'max':float(mat.sum(axis=0).max())},
         'missing_value_count':int(mat.isna().sum().sum()),
         'count_noninteger_rows_preview':int(((mat.iloc[:500].values-np.rint(mat.iloc[:500].values))!=0).sum())})
-    # Direct GSM to matrix column mapping via SOFT file names; do NOT assume order.
+    # Verify every individual source member and the entire raw count vector.
+    # A missing archive/metadata is a documented HOLD, not license to guess.
     gsms={s['accession']:s for s in samples}
-    mapping={}
-    for link in src['gsm_file_pairs']:
-        name=link['file'].split('/')[-1]
-        for c in mat.columns:
-            if c in name:
-                mapping[c]=link['accession']
-    # Individual RAW archive may preserve explicit GSM-to-internal-library links.
     raw_url=f'{series_path(acc)}/suppl/{acc}_RAW.tar'
     raw_body,raw_status=urlopen(raw_url,maximum=13_000_000,timeout=70)
     audit['raw_tar_probe']={'download':raw_status}
-    if raw_body:
-        try:
-            with tarfile.open(fileobj=io.BytesIO(raw_body),mode='r:*') as tf:
-                members=[m for m in tf.getmembers() if m.isfile()]
-                member_names=[m.name for m in members]
-                audit['raw_tar_probe']['member_count']=len(member_names)
-                audit['raw_tar_probe']['first_names']=member_names[:15]
-                audit['raw_tar_probe']['last_names']=member_names[-10:]
-                canonical=lambda v: re.sub(r'[^a-z0-9]','',str(v).lower())
-                canonical_cols={canonical(c):c for c in mat.columns}
-                unmapped=[]
-                for member in members:
-                    name=member.name
-                    gsm=re.search(r'GSM\d+',name)
-                    if not gsm:continue
-                    stem=re.sub(r'\.(?:txt|csv)(?:\.gz)?$', '', name.split('/')[-1],flags=re.I)
-                    internal=re.sub(r'^GSM\d+_', '', stem)
-                    col=canonical_cols.get(canonical(internal))
-                    if col: mapping[col]=gsm.group(0)
-                    else:unmapped.append(name)
-                audit['raw_tar_probe']['unmatched_member_names_first']=unmapped[:15]
-                audit['raw_tar_probe']['unmatched_matrix_columns_first']=[str(c) for c in mat.columns if c not in mapping][:15]
-                # For every individual file, verify its gene ID/count rows against the matrix.
-                # Missing identifiers are reconstructed only with *unique exact signatures*.
-                variances=mat.var(axis=1).sort_values(ascending=False)
-                topgenes=[str(v) for v in variances.index[:60]]
-                signature_cols={c:tuple(float(mat.loc[int(g) if mat.index.dtype.kind in 'iu' else g,c]) for g in topgenes[:25]) for c in mat.columns}
-                remaining={c for c in mat.columns if c not in mapping}
-                for member in members:
-                    gsm_match=re.search(r'GSM\d+',member.name)
-                    if not gsm_match:continue
-                    gsm=gsm_match.group(0)
-                    if gsm in mapping.values():continue
-                    binary=tf.extractfile(member).read()
-                    if member.name.endswith('.gz'):binary=gzip.decompress(binary)
-                    lines=binary.decode('utf8','replace').splitlines()
-                    if 'sample_file_first_lines' not in audit['raw_tar_probe']:
-                        audit['raw_tar_probe']['sample_file_first_lines']=lines[:6]
-                    observed={}
-                    for line in lines:
-                        cells=re.split(r'[\t,; ]+',line.strip())
-                        if len(cells)>=2 and cells[0] in topgenes:
-                            try:observed[cells[0]]=float(cells[1])
-                            except ValueError:continue
-                    if len(observed)<10:continue
-                    matched_cols=[]
-                    genes=sorted(observed)[:30]
-                    for col in remaining:
-                        try:
-                            if all(float(mat.loc[int(g) if mat.index.dtype.kind in 'iu' else g,col])==observed[g] for g in genes):matched_cols.append(col)
-                        except (KeyError,ValueError):continue
-                    if len(matched_cols)==1:
-                        mapping[matched_cols[0]]=gsm;remaining.remove(matched_cols[0])
-                audit['raw_tar_probe']['numeric_verified_map_n']=len(mapping)
-        except Exception as e:audit['raw_tar_probe']['error']=str(e)[:350]
-    audit['explicit_column_map_n']=len(mapping)
-    audit['n_unique_gsm_from_map']=len(set(mapping.values()))
-    audit['exemplar_map']=dict(list(mapping.items())[:8])
-    if len(mapping)!=mat.shape[1] or len(set(mapping.values()))!=len(mapping):
-        # Check series source names / supplementary links; never fabricate mapping.
+    if not raw_body or len(samples)!=59 or len(gsms)!=59 or mat.shape[1]!=59:
         audit['status']='HOLD_MATRIX_SAMPLE_MAPPING'
         return audit
+    try:
+        mapping=verify_archive_mapping(raw_body,list(mat.columns),list(mat.index),
+            lambda col:mat[col].tolist(),list(gsms))
+    except ValueError as e:
+        audit.update(status='HOLD_RAW_ARCHIVE_COUNT_IDENTITY',mapping_error=str(e))
+        return audit
+    audit['explicit_column_map_n']=len(mapping)
+    audit['n_unique_gsm_from_map']=len(set(mapping.values()))
+    audit['mapping_method']='FULL_INDIVIDUAL_COUNT_VECTOR_AND_LIBRARY_IDENTITY'
+    audit['raw_tar_probe']['full_count_vectors_verified']=len(mapping)
     matched=[]
     for col,gsm in mapping.items():
         s=gsms.get(gsm)
@@ -123,10 +76,11 @@ def therapy(out):
         if m:matched.append({'column':col,'gsm':gsm,'patient':m.group(1),'tissue':m.group(2).lower(),'visit':m.group(3),'title':s['title'],
         'responder':next((v.split(':',1)[-1].strip() for k,v in s.items() if 'characteristics' in k and v.lower().startswith('responder:')),'UNKNOWN')})
     if len(matched)!=mat.shape[1]:audit['status']='HOLD_INCOMPLETE_PATIENT_MAPPING';return audit
-    keys=collections.defaultdict(dict)
-    for s in matched:keys[(s['patient'],s['tissue'])][s['visit']]=s
-    pairs=[(v['V1'],v['V12']) for v in keys.values() if set(v)=={'V1','V12'}]
-    les_pairs=[(a,b) for a,b in pairs if a['tissue']=='lesional']
+    try:
+        pairs,les_pairs=paired_lesions(matched)
+    except ValueError as e:
+        audit.update(status='HOLD_PAIRED_PATIENT_OR_RESPONSE_IDENTITY',pairing_error=str(e))
+        return audit
     audit['patient_tissue_pairs']=len(pairs);audit['lesional_pairs']=len(les_pairs)
     audit['responder_pairs']=dict(collections.Counter(a['responder'] for a,b in les_pairs))
     # Save only per-library QC and exploratory globally normalized selected gene effects.
@@ -175,38 +129,49 @@ def nmosd(out):
     audit={'accession':acc,'cells':len(samples)}
     bytitle=collections.Counter(re.match(r'^(T-[A-Za-z0-9]+|Treg)',s['title']).group(1) if re.match(r'^(T-[A-Za-z0-9]+|Treg)',s['title']) else 'OTHER' for s in samples)
     audit['title_prefix_counts']=dict(bytitle)
-    tracks={}
-    for s in samples:
-        m=re.search(r'\[(L\d+_Track-\d+)\]',s['title'])
-        if m:tracks[m.group(1)]=s
-    audit['track_ids_from_titles']=len(tracks)
+    if len(samples)!=928:
+        audit['status']='HOLD_NMOSD_SOURCE_METADATA_COUNT'
+        return audit
     body,status=urlopen(f'{series_path(acc)}/suppl/{acc}_RawExpressionCountTable.csv.gz',maximum=18_000_000,timeout=70)
     audit['processed']=status
-    if body is None:return audit
+    if body is None:
+        audit['status']='HOLD_NMOSD_COUNT_ACCESS'
+        return audit
     # Stream gzipped CSV, no cells treated as patient replicates. Extract *only* target gene vectors.
     gz=gzip.GzipFile(fileobj=io.BytesIO(body)); reader=csv.reader(io.TextIOWrapper(gz,encoding='utf-8-sig',errors='replace'))
     header=next(reader)
     audit['columns']=len(header);audit['header_head']=header[:10]
-    mapped={col:tracks[col] for col in header if col in tracks}
+    mapped,missing=nmosd_track_mapping(samples,header)
+    audit['track_ids_from_titles']=len(samples)
     audit['matched_track_columns']=len(mapped)
     audit['unique_matched_GSM']=len({s['accession'] for s in mapped.values()})
+    audit['missing_metadata_track_n']=len(missing)
+    audit['missing_metadata_tracks']=missing
+    audit['donor_identity_verified']=False
+    if len(mapped)!=924 or len(missing)!=4:
+        audit['status']='HOLD_NMOSD_CHANGED_MATRIX_SCOPE'
+        return audit
     gene_ids={'FOXP3':'ENSG00000049768','PDCD1':'ENSG00000188389',
               'CTLA4':'ENSG00000163599','LAG3':'ENSG00000089692',
               'CD40LG':'ENSG00000102245','IL21':'ENSG00000138684'}
     id_to_symbol={v:k for k,v in gene_ids.items()}
-    candidate=[];first_genes=[]
+    candidate=[];first_genes=[];seen_targets=set()
     for i,row in enumerate(reader):
         if i<8: first_genes.append(row[:4])
-        if len(row)!=len(header):continue
+        if len(row)!=len(header):raise ValueError('STOP: ragged NMOSD count row')
         # Gene_id is symbol or Ensembl depending on GEO export.
         names=[str(row[j]).upper() for j in range(min(4,len(row)))]
         hits=[id_to_symbol[row[1].upper()]] if len(row)>1 and row[1].upper() in id_to_symbol else []
         if not hits:continue
+        if hits[0] in seen_targets:raise ValueError('STOP: duplicate NMOSD target gene row')
+        seen_targets.add(hits[0])
         vals=[]
         for j,c in enumerate(header):
             if c in mapped:
-                try: vals.append((c,float(row[j])))
-                except ValueError:pass
+                v=float(row[j])
+                if not np.isfinite(v) or v<0 or v!=np.floor(v):
+                    raise ValueError('STOP: invalid target raw count')
+                vals.append((c,v))
         # by *stimulation label*, not by disease status
         stats=collections.defaultdict(list)
         for c,v in vals:
@@ -214,11 +179,14 @@ def nmosd(out):
             stats[m.group(1) if m else 'Other'].append(v)
         for g in hits:
             for k,v in stats.items():
-                candidate.append({'gene':g,'entrez_stable_id':gene_ids[g],'stimulation_title':k,'cells_with_read':len(v),
+                candidate.append({'gene':g,'ensembl_gene_id':gene_ids[g],'stimulation_title':k,'cells_observed':len(v),
                   'fraction_detected':round(sum(vv>0 for vv in v)/len(v),4), 'mean_raw_count':round(sum(v)/len(v),3)})
+    if seen_targets!=set(gene_ids):
+        audit['status']='HOLD_NMOSD_TARGET_GENE_IDENTITY'
+        return audit
     audit['first_gene_row_names']=first_genes
     audit['candidate_gene_by_title']=candidate
-    audit['status']='CELL_LEVEL_MECHANISM_ONLY_NO_PATIENT_DIFFERENTIAL' if len(mapped)>=800 else 'HOLD_CELL_MAPPING'
+    audit['status']='CELL_LEVEL_MECHANISM_ONLY_NO_PATIENT_DIFFERENTIAL'
     with open(out/'nmosd_gene_descriptive.csv','w',newline='',encoding='utf8') as f:
         if candidate:
             w=csv.DictWriter(f,fieldnames=list(candidate[0]));w.writeheader();w.writerows(candidate)
@@ -239,8 +207,15 @@ def mg(out):
     before=[re.search(r'_(\d+)$',s) for s in groups['Seronegative pre']]
     after=[re.search(r'_(\d+)$',s) for s in groups['Seronegative post']]
     paired=sorted({m.group(1) for m in before if m}&{m.group(1) for m in after if m})
-    return {'samples':len(samples),'groups':{k:len(v) for k,v in groups.items()},'seronegative_prepost_title_ids':len(paired),
-            'GSE297547':'Series matrix fetch HTTP 403 in first audit, GEO HTML lists 25 samples; no MuSK status proven.',
+    newer,newer_q=sample_profile('GSE297547')
+    unique_keys([s['accession'] for s in samples],'GSE227835 GSMs')
+    unique_keys([s['accession'] for s in newer],'GSE297547 GSMs')
+    return {'samples':len(samples),'groups':{k:len(v) for k,v in groups.items()},
+            'seronegative_prepost_title_ids':len(paired),
+            'GSE297547':{'metadata_fetch':newer_q,'GEO_records':len(newer),
+            'pbmc_title_records':sum(s['title'].startswith('PBMC from ') for s in newer),
+            'vdj_title_records':sum(s['title'].lower().startswith('information of vdj ') for s in newer)},
+            'musk_positive_donor_count_verified':False,
             'status':'HOLD_NO_MUSK_SPECIFIC_GENOTYPED_OR_SEROTYPED_PATIENTS'}
 
 def hs_spatial(out):

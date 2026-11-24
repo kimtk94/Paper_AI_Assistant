@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'projects/**'
+      - 'tests/test_hs_*.py'
       - '.github/workflows/**'
   workflow_dispatch:
 permissions:
