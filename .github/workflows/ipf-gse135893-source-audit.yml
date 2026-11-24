@@ -1,9 +1,6 @@
 name: IPF GSE135893 diagnosis-source confounding audit
+# External data research is opt-in; routine PR CI uses offline evidence tests.
 on:
-  pull_request:
-    paths:
-      - 'projects/ipf_pxd010965/source_batch_audit.py'
-      - '.github/workflows/ipf-gse135893-source-audit.yml'
   workflow_dispatch:
 jobs:
   donor-source-audit:

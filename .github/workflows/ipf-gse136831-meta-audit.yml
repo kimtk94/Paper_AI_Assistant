@@ -1,9 +1,6 @@
 name: IPF GSE136831 independent scRNA metadata audit
+# External data research is opt-in; routine PR CI uses offline evidence tests.
 on:
-  pull_request:
-    paths:
-      - 'projects/ipf_pxd010965/gse136831_metadata.py'
-      - '.github/workflows/ipf-gse136831-meta-audit.yml'
   workflow_dispatch:
 jobs:
   metadata-audit:

@@ -1,0 +1,23 @@
+name: IPF offline evidence review
+on:
+  pull_request:
+    paths:
+      - 'projects/ipf*/**'
+      - 'tests/test_ipf_evidence_review.py'
+      - '.github/workflows/ipf-*.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile research scripts without external downloads
+        run: python -m compileall -q projects/ipf_pxd010965 projects/ipf_gse136831_validation projects/ipf_evidence_review
+      - name: Test strict source, donor and sparse-data guards
+        run: python -m unittest discover -s tests -p 'test_ipf_evidence_review.py' -v

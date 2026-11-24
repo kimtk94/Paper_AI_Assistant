@@ -1,9 +1,6 @@
 name: IPF GSE135893 cell-of-origin audit
+# External data research is opt-in; routine PR CI uses offline evidence tests.
 on:
-  pull_request:
-    paths:
-      - 'projects/ipf_pxd010965/gse135893_*.py'
-      - '.github/workflows/ipf-gse135893-cell-origin.yml'
   workflow_dispatch:
 jobs:
   public-geo-metadata:

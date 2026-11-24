@@ -1,10 +1,7 @@
 name: IPF GSE136831 independent donor-aware gene validation
+# External data research is opt-in; routine PR CI uses offline evidence tests.
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'projects/ipf_gse136831_validation/**'
-      - '.github/workflows/ipf-gse136831-targeted.yml'
 permissions:
   contents: read
 jobs:
