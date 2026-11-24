@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'projects/endometriosis_gse283755_validation/**'
+      - 'projects/endometriosis_gse283755/**'
       - '.github/workflows/endometriosis-loo-supplement.yml'
 permissions:
   contents: read
@@ -22,7 +23,7 @@ jobs:
         if: always()
         with:
           name: gse283755-official-deg-supplement
-          path: output/endometriosis_supplement/
+          path: output/endometriosis_supplement/supplement_audit.json
           retention-days: 30
   patient-leave-one-out:
     runs-on: ubuntu-latest
@@ -44,11 +45,15 @@ jobs:
         run: |
           Rscript projects/endometriosis_gse283755/deseq2.R output/endo_loo/raw_counts_by_gene_symbol.csv output/endo_loo
           Rscript projects/endometriosis_gse283755_validation/loo_deseq2.R output/endo_loo/raw_counts_by_gene_symbol.csv output/endo_loo
+      - name: Compare the five published Table 3 gene effects
+        run: python projects/endometriosis_gse283755_validation/compare_top5.py --results output/endo_loo/deseq2_author_filter_gene_results.csv --out output/endo_loo/TOP5_COMPARISON.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: gse283755-deseq2-leaveoneout
           path: |
+            output/endo_loo/TOP5_COMPARISON.json
+            output/endo_loo/audit.json
             output/endo_loo/LOO_REPORT.md
             output/endo_loo/loo_*.csv
             output/endo_loo/LOO_DEG_*.csv

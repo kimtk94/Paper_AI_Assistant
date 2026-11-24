@@ -7,6 +7,10 @@ from __future__ import annotations
 import argparse, datetime as dt, hashlib, io, json, math, re, sys, time, urllib.request
 from pathlib import Path
 
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent))
+from count_evidence import resolve_sample, classify_metric, validate_raw_counts
+
 import numpy as np
 import pandas as pd
 from scipy.stats import ttest_ind
@@ -70,33 +74,11 @@ def download(dest: Path, manifest: dict) -> None:
 
 
 def canonical_sample(col: str):
-    c = str(col).lower()
-    for gsm, (group, idx) in SAMPLE_GROUPS.items():
-        if gsm.lower() in c:
-            return gsm, group, idx
-    for gsm, identifier in SAMPLE_ID_LOOKUP.items():
-        if re.search(r"(?<![0-9])" + re.escape(identifier) + r"(?![0-9])", c):
-            group, idx = SAMPLE_GROUPS[gsm]
-            return gsm, group, idx
-    # only accept unambiguous published title aliases
-    pattern = r"(?:ems[\W_]*)?(none|untreated|visanne|dienogest)[\W_]*([1-4])(?!\d)"
-    hits = re.findall(pattern, c)
-    if len(hits) != 1:
-        return None
-    word, idx = hits[0]
-    group = "dienogest" if word in ("visanne", "dienogest") else "untreated"
-    idx = int(idx)
-    return next((gsm, g, j) for gsm, (g, j) in SAMPLE_GROUPS.items() if (g, j) == (group, idx))
+    return resolve_sample(str(col), SAMPLE_GROUPS, SAMPLE_ID_LOOKUP)
 
 
 def kind_of(col):
-    c = str(col).lower()
-    if "fpkm" in c: return "fpkm"
-    if "rpkm" in c: return "rpkm"
-    if "tpm" in c: return "tpm"
-    if "count" in c and "norm" not in c: return "count"
-    if "rsem" in c and "expected" in c: return "count"
-    return "unspecified"
+    return classify_metric(str(col), SAMPLE_GROUPS, SAMPLE_ID_LOOKUP)
 
 
 def find_gene_col(df):
@@ -154,6 +136,11 @@ def audit(input_path: Path, dest: Path, manifest: dict):
         return
     priority = {"count": 0, "tpm": 1, "fpkm": 2, "rpkm": 3, "unspecified": 4}
     candidates.sort(key=lambda x: priority.get(x[1], 10))
+    best = priority.get(candidates[0][1], 10)
+    if sum(priority.get(c[1],10)==best for c in candidates)>1:
+        manifest["analysis"]={"status":"BLOCKED_AMBIGUOUS_SAMPLE_MAPPING",
+                              "reason":"Multiple equally preferred complete matrices; no arbitrary sheet choice"}
+        return
     sheet, kind, colmap = candidates[0]
     manifest["analysis"] = {"status": "PROFILE_COMPLETE", "all_candidates": [{"sheet": s, "metric": k} for s,k,_ in candidates], "chosen_sheet": sheet, "chosen_metric": kind}
     df = pd.read_excel(excel, sheet_name=sheet)
@@ -164,7 +151,11 @@ def audit(input_path: Path, dest: Path, manifest: dict):
     order = list(SAMPLE_GROUPS)
     selected = [colmap[gsm] for gsm in order]
     numbers = df[selected].apply(pd.to_numeric, errors="coerce")
-    valid = numbers.notna().all(axis=1) & (numbers >= 0).all(axis=1)
+    if kind == "count":
+        if any(not re.fullmatch(r"(?:GSM\d+|\d+)_Read_Count", c, re.I) for c in selected):
+            raise ValueError("STOP: raw count columns require exact published Read_Count headers")
+        validate_raw_counts(numbers.to_numpy())
+    valid = numbers.notna().all(axis=1) & (numbers >= 0).all(axis=1) & np.isfinite(numbers).all(axis=1)
     numbers = numbers.loc[valid]
     identifiers = df.loc[valid, gene_col].astype(str).str.strip()
     nonempty = identifiers.ne("") & identifiers.ne("nan")
@@ -172,12 +163,14 @@ def audit(input_path: Path, dest: Path, manifest: dict):
     identifiers = identifiers.loc[nonempty]
     numbers.columns = order
     # Gene symbol duplicates: sum counts, instead of averaging, for count data; leave non-count metrics averaged.
+    manifest["analysis"].update(source_rows=int(len(df)), invalid_numeric_rows=int((~valid).sum()),
+                                missing_gene_identifier_rows=int((~nonempty).sum()),
+                                gene_identifier_column=str(gene_col),
+                                duplicate_identifier_rows=int(identifiers.duplicated().sum()))
     if kind == "count":
-        if not np.allclose(numbers.to_numpy(), np.round(numbers.to_numpy()), atol=1e-7):
-            manifest["analysis"].update(status="BLOCKED_NONINTEGER_COUNTS", reason="Read_Count column is not integer; cannot use DESeq2 directly")
-            return
         numbers = numbers.groupby(identifiers.values, sort=False).sum()
-        numbers = numbers.round().astype("int64")
+        validate_raw_counts(numbers.to_numpy())
+        numbers = numbers.astype("int64")
     else:
         numbers = numbers.groupby(identifiers.values, sort=False).mean()
     if len(numbers) < 1000:
@@ -259,7 +252,7 @@ def main():
         fh.write("Next gate: verify original raw counts and gene IDs, DESeq2 reproduction with design ~ treatment only, "
                  "independent cell-source contextualization and planned wet-lab validation.\n")
     print(json.dumps(manifest,ensure_ascii=False,indent=2))
-    if manifest["analysis"]["status"] in ("FAILED", "BLOCKED_GENE_IDENTIFIER", "BLOCKED_TOO_FEW_GENES", "BLOCKED_NONINTEGER_COUNTS"):
+    if manifest["analysis"]["status"] != "EXPLORATORY_COMPLETE" or manifest["analysis"].get("chosen_metric") != "count":
         raise SystemExit(1)
 
 if __name__=="__main__":main()
