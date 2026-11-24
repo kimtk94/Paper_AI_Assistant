@@ -4,17 +4,29 @@ on:
   push:
     branches: [main]
     paths:
-      - "src/skku_pubmed_*.py"
-      - "tests/test_skku_pubmed.py"
+      - "src/**"
+      - "tests/**"
+      - "schemas/**"
+      - "examples/**"
+      - "requirements*.txt"
       - "notebooks/SKKU_PubMed_Lineage.ipynb"
       - ".github/workflows/skku-pubmed-ci.yml"
   pull_request:
     paths:
-      - "src/skku_pubmed_*.py"
-      - "tests/test_skku_pubmed.py"
+      - "src/**"
+      - "tests/**"
+      - "schemas/**"
+      - "examples/**"
+      - "requirements*.txt"
       - "notebooks/SKKU_PubMed_Lineage.ipynb"
       - ".github/workflows/skku-pubmed-ci.yml"
   workflow_dispatch:
+    inputs:
+      run_live_smoke:
+        description: "Also run the external PubMed integration checks"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -41,21 +53,14 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: python -m pip install "networkx>=3.2,<4"
+        run: python -m pip install -r requirements.txt
 
       - name: Compile scripts
         run: |
-          python -m py_compile \
-            src/skku_pubmed_lineage.py \
-            src/skku_pubmed_domain.py \
-            src/skku_pubmed_annotation.py \
-            src/skku_pubmed_seed_profiles.py \
-            src/skku_pubmed_author_followup.py \
-            src/skku_pubmed_researcher_network.py \
-            src/skku_pubmed_research_communities.py
+          python -m compileall -q src
 
       - name: Run deterministic unit tests
-        run: python -m unittest discover -s tests -p "test_skku_pubmed.py" -v
+        run: python -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Validate one-cell notebook structure
         run: |
@@ -75,6 +80,7 @@ jobs:
 
   pubmed-smoke:
     name: Live PubMed smoke
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_live_smoke }}
     needs: unit
     runs-on: ubuntu-latest
     timeout-minutes: 10

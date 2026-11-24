@@ -19,6 +19,7 @@ import argparse
 import json
 import re
 import subprocess
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -613,9 +614,21 @@ class PdfDownloader:
                 data = response.read()
         except (URLError, HTTPError):
             return False
-        if not data:
+        if not data.startswith(b"%PDF-"):
             return False
-        dst.write_bytes(data)
+        # OA endpoints can return an HTML landing page with HTTP 200. Validate
+        # the header before touching an existing PDF, then replace atomically.
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", dir=dst.parent, prefix=f".{dst.name}.", suffix=".tmp", delete=False
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                temporary_file.write(data)
+            temporary_path.replace(dst)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
         return True
 
     @staticmethod
@@ -773,6 +786,12 @@ def extract_doi(text: str) -> str | None:
     return match.group(0) if match else None
 
 
+def normalize_doi(text: str | None) -> str | None:
+    """Use the same case-insensitive DOI key for bare identifiers and DOI URLs."""
+    doi = extract_doi(text or "")
+    return doi.casefold() if doi else None
+
+
 def extract_pmid(text: str) -> str | None:
     if "pmid" in text.lower():
         nums = re.findall(r"\d+", text)
@@ -855,14 +874,14 @@ def _collect_missing_pdf_candidates(
     *,
     pdf_payload: dict[str, Any],
 ) -> list[MissingPdfCandidate]:
-    doi_map = {p.doi: p for p in papers if p.doi}
+    doi_map = {key: p for p in papers if (key := normalize_doi(p.doi))}
     pmid_map = {p.pmid: p for p in papers if p.pmid}
     candidates: list[MissingPdfCandidate] = []
 
     for row in pdf_payload.get("results", []):
         if row.get("downloaded"):
             continue
-        doi = text_or_none(row.get("doi"))
+        doi = normalize_doi(text_or_none(row.get("doi")))
         pmid = text_or_none(row.get("pmid"))
         miss_reason = str(row.get("reason") or "")
 

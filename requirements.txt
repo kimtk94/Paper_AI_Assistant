@@ -1,0 +1,2 @@
+-r requirements-multiomics.txt
+networkx>=3.2,<4

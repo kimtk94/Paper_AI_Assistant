@@ -1,0 +1,21 @@
+{
+  "review_date": "2026-11-24",
+  "source_repository": "kimtk94/Paper_AI_Assistant",
+  "pull_request": 25,
+  "source_accession": "GSE294009",
+  "head_sha": "a1fd3859804f922b57770add1031fa99a0cd94a5",
+  "workflow_run_id": 44927009405,
+  "workflow_run_url": "https://github.com/kimtk94/Paper_AI_Assistant/actions/runs/44927009405",
+  "job_id": 136915196299,
+  "artifact_id": 14716677318,
+  "artifact_name": "hs-132-full-nuisance-LOO-and-slide-sensitivity",
+  "artifact_expires_at_utc": "2027-01-05T17:04:12Z",
+  "artifact_zip_sha256": "295d2226a59a9b42b790db78d564b384463de93d2b6defa9a3f38049843fa921",
+  "original_member": "HS_FULL_REFIT_SLIDE_DONOR_LOO_AUDIT.json",
+  "preserved_file": "hs_full_refit_44927009405.json",
+  "preserved_file_sha256": "23924f48b44b16dc9a91247285094bcb1d1e847cbcbcfb3ad67c08357de1efd6",
+  "preserved_bytes": 24738,
+  "transformation": "None; ZIP member bytes preserved exactly.",
+  "upstream_matrix_sha256_as_reported": "943dff9ffcd6a9b75b0356a1c388863b48ec95804cf1d004ca17571a4ce5c169",
+  "limitation": "Preserves a historical public-data model audit only; does not archive the source matrix, repair the gzip identity issue, or establish independent biological validation."
+}

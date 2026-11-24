@@ -163,7 +163,9 @@ def infer_year(pdf_path: Path, text: str) -> int | None:
     current_year = datetime.now().year
     valid_years = set(range(1900, current_year + 1))
 
-    filename_matches = re.findall(r"(?:19|20)\d{2}", pdf_path.name)
+    # A year must be a complete filename token. In particular, PMC2012345 and
+    # other article identifiers must not override a year found in the text.
+    filename_matches = re.findall(r"(?<![A-Za-z0-9])(?:19|20)\d{2}(?![A-Za-z0-9])", pdf_path.name)
     for cand in filename_matches:
         value = int(cand)
         if value in valid_years:

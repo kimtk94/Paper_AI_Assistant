@@ -1,2 +1,10 @@
 # Runtime secrets (do not commit)
 .env.openclaw
+
+# Generated Python and local runtime files
+__pycache__/
+*.py[cod]
+.venv/
+outputs/
+output/
+data/

@@ -444,12 +444,65 @@ class PubMedClient:
                 "sort": "pub_date",
             },
         )
-        result = json.loads(payload.decode("utf-8")).get("esearchresult", {})
-        return int(result.get("count", 0)), list(result.get("idlist", []))
+        try:
+            response = json.loads(payload.decode("utf-8"))
+        except (UnicodeError, ValueError) as exc:
+            raise RuntimeError("NCBI esearch returned invalid JSON") from exc
+        if not isinstance(response, dict) or response.get("error"):
+            raise RuntimeError("NCBI esearch returned an error response")
+        result = response.get("esearchresult")
+        if not isinstance(result, dict) or result.get("error"):
+            raise RuntimeError("NCBI esearch response is missing a valid esearchresult")
+        try:
+            count = int(result["count"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("NCBI esearch response has no valid result count") from exc
+        ids = result.get("idlist")
+        if (
+            count < 0
+            or isinstance(result["count"], bool)
+            or not isinstance(ids, list)
+            or any(not isinstance(value, str) or not value.strip() for value in ids)
+        ):
+            raise RuntimeError("NCBI esearch returned invalid result fields")
+        expected = min(retmax, max(0, count - retstart))
+        if len(ids) != expected or len(set(ids)) != len(ids):
+            raise RuntimeError(
+                f"NCBI esearch returned an incomplete or duplicate page: "
+                f"expected {expected} IDs at offset {retstart}, received {len(ids)}"
+            )
+        return count, ids
 
     def search(self, query: str, max_results: int) -> tuple[int, list[str]]:
         # Backward-compatible one-page search used by author follow-up.
         return self.search_page(query, retstart=0, retmax=max_results)
+
+    @staticmethod
+    def _parse_fetch_batch(payload: bytes, expected_ids: list[str]) -> list[Paper]:
+        """Validate an entire response before it can enter the reusable cache."""
+        try:
+            root = ET.fromstring(payload)
+        except ET.ParseError as exc:
+            raise RuntimeError("NCBI efetch returned malformed XML") from exc
+        if root.tag != "PubmedArticleSet" or any(
+            node.tag.lower() == "error" for node in root.iter()
+        ):
+            raise RuntimeError("NCBI efetch returned an error or unexpected XML document")
+        try:
+            papers = [parse_paper(node) for node in root.findall("./PubmedArticle")]
+        except ValueError as exc:
+            raise RuntimeError("NCBI efetch returned an invalid article record") from exc
+        received = [paper.pmid for paper in papers]
+        expected = set(expected_ids)
+        actual = set(received)
+        if actual != expected or len(received) != len(actual):
+            raise RuntimeError(
+                "NCBI efetch did not return each requested article exactly once: "
+                f"missing={len(expected - actual)}, unexpected={len(actual - expected)}, "
+                f"duplicates={len(received) - len(actual)}. "
+                "Unsupported non-article records also require explicit handling."
+            )
+        return papers
 
     def fetch(
         self,
@@ -465,7 +518,9 @@ class PubMedClient:
         locally instead of being downloaded again. The batch filename includes
         a hash of its PMID list so stale caches cannot be silently reused.
         """
-        ids = list(dict.fromkeys(str(x) for x in pmids if str(x).strip()))
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        ids = list(dict.fromkeys(str(x).strip() for x in pmids if str(x).strip()))
         papers: list[Paper] = []
         total_batches = math.ceil(len(ids) / batch_size) if ids else 0
 
@@ -486,23 +541,24 @@ class PubMedClient:
             )
 
             payload: bytes | None = None
-            root: ET.Element | None = None
+            batch_papers: list[Paper] | None = None
             source = "download"
 
             if resume and cache_file is not None and cache_file.exists():
                 try:
                     payload = cache_file.read_bytes()
-                    root = ET.fromstring(payload)
+                    batch_papers = self._parse_fetch_batch(payload, batch)
                     cache_hits += 1
                     source = "cache"
-                except (OSError, ET.ParseError):
-                    # A partial/corrupt cache is never trusted.
+                except (OSError, RuntimeError):
+                    # Parseable error responses and incomplete batches are also
+                    # invalid caches; XML syntax alone is not evidence of success.
                     try:
                         cache_file.unlink()
                     except OSError:
                         pass
                     payload = None
-                    root = None
+                    batch_papers = None
 
             if payload is None:
                 payload = self._request(
@@ -510,14 +566,7 @@ class PubMedClient:
                     {"db": "pubmed", "id": ",".join(batch), "retmode": "xml"},
                     post=len(batch) > 20,
                 )
-                try:
-                    root = ET.fromstring(payload)
-                except ET.ParseError as exc:
-                    preview = payload[:300].decode("utf-8", errors="replace")
-                    raise RuntimeError(
-                        f"NCBI efetch returned malformed XML for batch "
-                        f"{batch_index}/{total_batches}: {preview}"
-                    ) from exc
+                batch_papers = self._parse_fetch_batch(payload, batch)
 
                 downloaded += 1
                 if cache_file is not None:
@@ -525,8 +574,8 @@ class PubMedClient:
                     tmp_file.write_bytes(payload)
                     tmp_file.replace(cache_file)
 
-            assert root is not None
-            papers.extend(parse_paper(x) for x in root.findall("./PubmedArticle"))
+            assert batch_papers is not None
+            papers.extend(batch_papers)
 
             if total_batches > 1 and (
                 batch_index == 1
@@ -610,7 +659,7 @@ def _checkpoint_payload(
     completed_windows: list[dict],
 ) -> dict:
     return {
-        "version": 1,
+        "version": 2,
         "spec": spec,
         "retrieved_pmids": pmids,
         "completed_windows": completed_windows,
@@ -661,7 +710,7 @@ def search_partitioned_pubmed(
 
     if resume and checkpoint_path and checkpoint_path.exists():
         saved = json.loads(checkpoint_path.read_text(encoding="utf-8"))
-        if saved.get("spec") == spec:
+        if saved.get("version") == 2 and saved.get("spec") == spec:
             for pmid in saved.get("retrieved_pmids", []):
                 value = str(pmid)
                 if value and value not in seen:
@@ -679,7 +728,10 @@ def search_partitioned_pubmed(
                 file=sys.stderr,
             )
         else:
-            print("[resume] checkpoint spec differs; starting a new crawl", file=sys.stderr)
+            print(
+                "[resume] checkpoint format or spec differs; starting a new crawl",
+                file=sys.stderr,
+            )
 
     overall_query = build_query(start_year, end_year, topic, extra)
     total_hits, _ = client.search_page(overall_query, retstart=0, retmax=0)
@@ -688,7 +740,8 @@ def search_partitioned_pubmed(
         if checkpoint_path is None:
             return
         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-        checkpoint_path.write_text(
+        temporary = checkpoint_path.with_suffix(checkpoint_path.suffix + ".tmp")
+        temporary.write_text(
             json.dumps(
                 _checkpoint_payload(
                     spec=spec,
@@ -700,6 +753,7 @@ def search_partitioned_pubmed(
             ),
             encoding="utf-8",
         )
+        temporary.replace(checkpoint_path)
 
     def remaining_cap() -> int | None:
         if max_results == 0:
@@ -731,20 +785,26 @@ def search_partitioned_pubmed(
                 file=sys.stderr,
             )
 
-        target = count if cap is None else min(count, cap)
-        page_ids = first_ids[:target]
-        for pmid in page_ids:
-            value = str(pmid)
-            if value and value not in seen:
-                seen.add(value)
-                pmids.append(value)
+        window_ids: set[str] = set()
+
+        def add_page(ids: list[str]) -> None:
+            for pmid in ids:
+                value = str(pmid)
+                if not value or value in window_ids:
+                    raise RuntimeError(f"Partition {label} returned duplicate or empty IDs")
+                window_ids.add(value)
+                if value not in seen:
+                    seen.add(value)
+                    pmids.append(value)
+
+        add_page(first_ids)
 
         retstart = len(first_ids)
-        while retstart < target:
+        while retstart < count:
             cap_now = remaining_cap()
             if cap_now == 0:
                 break
-            retmax = min(page_size, target - retstart)
+            retmax = min(page_size, count - retstart)
             if cap_now is not None:
                 retmax = min(retmax, cap_now)
             _, ids = client.search_page(
@@ -753,15 +813,14 @@ def search_partitioned_pubmed(
                 retmax=retmax,
             )
             if not ids:
-                break
-            for pmid in ids:
-                value = str(pmid)
-                if value and value not in seen:
-                    seen.add(value)
-                    pmids.append(value)
+                raise RuntimeError(
+                    f"Partition {label} ended after {retstart} of {count} IDs; "
+                    "the incomplete window was not checkpointed as complete"
+                )
+            add_page(ids)
             retstart += len(ids)
             print(
-                f"[crawl] {label}: {min(retstart, target):,}/{target:,}",
+                f"[crawl] {label}: {retstart:,}/{count:,}",
                 file=sys.stderr,
             )
 
@@ -770,7 +829,7 @@ def search_partitioned_pubmed(
                 "label": label,
                 "query": query,
                 "pubmed_hits": count,
-                "retrieved_target": target,
+                "retrieved_target": retstart,
                 "retrieved_total_after_window": len(pmids),
             }
         )
