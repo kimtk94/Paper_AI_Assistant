@@ -277,5 +277,8 @@ def main():
     report=[f'# {a.role} second-pass evidence', '',f"**Status: {res.get('status')}**",'', 'Public GEO data only. No outreach or clinical result prediction.', '', '## Result', '', '```json',json.dumps(res,ensure_ascii=False,indent=2)[:12000], '```']
     (out/'REFINED_REPORT.md').write_text('\n'.join(report),encoding='utf8')
     print(json.dumps({'role':a.role,'status':res.get('status'),'key_counts':{k:res.get(k) for k in ('samples','groups','lesional_pairs','matched_track_columns','stage_roi_counts')}},ensure_ascii=False))
+    # Scientific HOLD is an expected data-access outcome; technical ERROR is not.
+    if res.get('status') == 'ERROR':
+        raise SystemExit(1)
 
 if __name__=='__main__':main()
