@@ -20,6 +20,8 @@ jobs:
         run: python -m pip install --quiet PyYAML==6.0.2
       - name: Compile Python source without execution or network access
         run: python -m compileall -q projects
+      - name: Test official supplement retries and provenance failures offline
+        run: python -m unittest discover -s tests -p 'test_hs_supplement_archive.py' -v
       - name: Verify YAML triggers and research fail-closed guards
         run: |
           python - <<'PY'
